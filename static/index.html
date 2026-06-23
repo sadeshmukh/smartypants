@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Vision Assistant — Jetson Orin Nano</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>👁️ Scene Description Assistant</h1>
+    <p class="sub">Live YOLOv8 + TensorRT detection on a Jetson Orin Nano, plus on-demand AI scene captions.</p>
+  </header>
+
+  <main>
+    <section class="video-pane">
+      <div class="video-wrap">
+        <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay"></canvas>
+      </div>
+      <canvas id="capture" class="hidden"></canvas>
+
+      <div class="controls">
+        <label class="toggle">
+          <input type="checkbox" id="trtToggle" checked />
+          TensorRT acceleration
+        </label>
+        <button id="describeBtn">🔊 Describe Scene</button>
+        <span id="connStatus" class="status">connecting…</span>
+      </div>
+    </section>
+
+    <section class="stats-pane">
+      <div class="stat-card">
+        <div class="stat-label">Inference (GPU)</div>
+        <div id="inferenceMs" class="stat-value">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Detector FPS</div>
+        <div id="fps" class="stat-value">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Mode</div>
+        <div id="modeBadge" class="stat-value">TensorRT: ON</div>
+      </div>
+
+      <h2>Scene log</h2>
+      <ul id="captionLog" class="caption-log"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
