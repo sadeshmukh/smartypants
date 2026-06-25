@@ -127,6 +127,14 @@ function sendMode() {
 }
 trtToggle.addEventListener("change", sendMode);
 
+function getLabelHue(label) {
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = label.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % 360;
+}
+
 function drawOverlay(result) {
   const ctx = overlay.getContext("2d");
   ctx.clearRect(0, 0, overlay.width, overlay.height);
@@ -143,7 +151,7 @@ function drawOverlay(result) {
     const ph = (y2 - y1) * scaleY;
     const label = `${result.labels[i].toUpperCase()} ${(result.scores[i] * 100).toFixed(0)}%`;
     
-    const hue = (i * 75) % 360;
+    const hue = getLabelHue(result.labels[i]);
     const strokeColor = `hsla(${hue}, 85%, 60%, 1)`;
     const fillColor = `hsla(${hue}, 85%, 60%, 0.12)`;
     const badgeColor = `hsla(${hue}, 85%, 55%, 1)`;
