@@ -1,156 +1,239 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<title>Vision Assistant — Jetson Orin Nano</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CoreVision AI — Jetson Perception Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- MediaPipe Client SDKs -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 <body>
-  <header>
-    <h1>👁️ Voice Vision Assistant</h1>
-    <p class="sub">Say "Hey Assistant" and ask a question about what the camera sees — answered live on a Jetson Orin Nano.</p>
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-dot"></span>
+        <span class="logo-text">CoreVision AI</span>
+      </div>
+      <span class="badge badge-edge">Edge Perception Hub</span>
+    </div>
+    <div class="header-right">
+      <div class="server-status">
+        <span class="status-indicator online"></span>
+        <span id="connStatus" class="status-text">Connecting to Jetson...</span>
+      </div>
+    </div>
   </header>
 
-  <main>
-    <section class="video-pane">
-      <div id="videoWrap" class="video-wrap state-idle">
-        <video id="video" autoplay playsinline muted></video>
-        <canvas id="overlay"></canvas>
-      </div>
-      <canvas id="capture" class="hidden"></canvas>
-
-      <div class="voice-bar">
-        <span id="voiceStatus" class="voice-status idle">👂 Listening for "Hey Assistant"…</span>
-        <label class="toggle debug-toggle">
-          <input type="checkbox" id="debugToggle" checked />
-          🐛 Show live transcript
-        </label>
-      </div>
-
-      <div id="debugPanel" class="debug-panel">
-        <div class="debug-interim">Hearing: <span id="interimTranscript">(nothing yet)</span></div>
-        <ul id="transcriptLog" class="transcript-log"></ul>
+  <main class="dashboard-grid">
+    <!-- COLUMN 1: Camera & Perception Controls -->
+    <section class="panel-section perception-column">
+      <div class="panel-card camera-card">
+        <div class="card-header">
+          <h2 class="card-title">Live Vision Feed</h2>
+          <span id="modeBadge" class="mode-badge">TensorRT Enabled</span>
+        </div>
+        <div class="video-container">
+          <div id="videoWrap" class="video-wrap state-idle">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+          </div>
+        </div>
+        <canvas id="capture" class="hidden"></canvas>
       </div>
 
-      <!-- Quick Presets -->
-      <div class="preset-container">
-        <button type="button" class="preset-btn" data-q="Describe what you see.">🔍 Describe Scene</button>
-        <button type="button" class="preset-btn" data-q="What objects are in front of the camera?">📦 List Objects</button>
-        <button type="button" class="preset-btn" data-q="Are there any hazards or danger in this scene?">⚠️ Hazards?</button>
-        <button type="button" class="preset-btn" data-q="Read any text visible in the frame.">📝 Read Text</button>
-      </div>
-
-      <!-- Narrator and fallback -->
-      <div class="narrator-bar">
-        <label class="toggle">
-          <input type="checkbox" id="narrateToggle" />
-          🔄 Continuous Narrator (automatic updates every 10s)
-        </label>
-      </div>
-
-      <form id="fallbackForm" class="fallback-form">
-        <input id="fallbackInput" type="text" placeholder="Or type a question (voice not working?)" autocomplete="off" />
-        <button type="submit">Ask</button>
-      </form>
-
-      <details class="engineering" open>
-        <summary>⚙️ Engineering stats</summary>
-        <div class="eng-body">
-          <div class="eng-controls">
-            <label class="toggle">
+      <div class="panel-card controls-card">
+        <div class="card-header">
+          <h2 class="card-title">Model Overlays</h2>
+        </div>
+        <div class="controls-grid">
+          <div class="switch-row">
+            <div class="switch-info">
+              <span class="switch-name">Object Detection (YOLOv8)</span>
+              <span class="switch-desc">Jetson server-side fast path</span>
+            </div>
+            <label class="switch">
               <input type="checkbox" id="trtToggle" checked />
-              TensorRT acceleration
+              <span class="slider"></span>
             </label>
-            <span id="connStatus" class="status">connecting…</span>
+          </div>
+          
+          <div class="switch-row">
+            <div class="switch-info">
+              <span class="switch-name">Hand Landmarks (MediaPipe)</span>
+              <span class="switch-desc">Local browser-side skeletal tracking</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="handsToggle" />
+              <span class="slider"></span>
+            </label>
           </div>
 
-          <!-- Real-Time Sparkline latency tracking -->
-          <div class="sparkline-container">
-            <div class="sparkline-header">
-              <span>📊 Real-Time Latency (ms)</span>
-              <div class="legend">
-                <span class="legend-item"><span class="legend-dot yolo"></span>GPU Inference</span>
-                <span class="legend-item"><span class="legend-dot total"></span>Total RTT</span>
-              </div>
+          <div class="switch-row">
+            <div class="switch-info">
+              <span class="switch-name">Pose Estimation (MediaPipe)</span>
+              <span class="switch-desc">Local browser-side body tracking</span>
             </div>
-            <canvas id="sparklineCanvas" width="450" height="90"></canvas>
+            <label class="switch">
+              <input type="checkbox" id="poseToggle" />
+              <span class="slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card voice-card">
+        <div class="card-header">
+          <h2 class="card-title">Speech Assistant</h2>
+          <div id="voiceStatus" class="voice-status status-idle">Listening...</div>
+        </div>
+        
+        <div class="voice-controls">
+          <div class="switch-row compact">
+            <span class="switch-name font-sm">Show Speech Transcript</span>
+            <label class="switch">
+              <input type="checkbox" id="debugToggle" checked />
+              <span class="slider"></span>
+            </label>
           </div>
 
-          <div class="stat-row">
-            <div class="stat-card">
-              <div class="stat-label">Inference (GPU)</div>
-              <div id="inferenceMs" class="stat-value">—</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Detector FPS</div>
-              <div id="fps" class="stat-value">—</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-label">Mode</div>
-              <div id="modeBadge" class="stat-value">TensorRT: ON</div>
-            </div>
+          <div id="debugPanel" class="debug-panel">
+            <div class="debug-interim">Hearing: <span id="interimTranscript">...</span></div>
+            <ul id="transcriptLog" class="transcript-log"></ul>
           </div>
 
-          <!-- Hardware Metrics section -->
-          <div class="hardware-telemetry">
-            <h4 class="section-title">⚡ Jetson Orin Hardware Metrics</h4>
-            <div class="stat-row">
-              <div class="stat-card">
-                <div class="stat-label">CPU Usage</div>
-                <div id="statCpu" class="stat-value">— %</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">GPU Load</div>
-                <div id="statGpu" class="stat-value">— %</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">SoC Temp</div>
-                <div id="statTemp" class="stat-value">— °C</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-label">Memory</div>
-                <div id="statMem" class="stat-value">— %</div>
-              </div>
+          <div class="preset-group">
+            <span class="presets-label">Prompt Presets</span>
+            <div class="preset-container">
+              <button type="button" class="preset-btn" data-q="Describe what you see.">🔍 Describe Scene</button>
+              <button type="button" class="preset-btn" data-q="What objects are in front of the camera?">📦 List Objects</button>
+              <button type="button" class="preset-btn" data-q="Are there any hazards or danger in this scene?">⚠️ Hazards?</button>
+              <button type="button" class="preset-btn" data-q="Read any text visible in the frame.">📝 Read Text</button>
             </div>
           </div>
 
-          <!-- TTS Voice Controls -->
-          <div class="voice-settings-panel">
-            <h4 class="section-title">🗣️ Speech Synthesizer Settings</h4>
-            <div class="voice-settings-row">
-              <label for="voiceSelect">Voice Voice:</label>
-              <select id="voiceSelect" class="voice-select"><option value="">Default Voice</option></select>
+          <div class="switch-row compact">
+            <span class="switch-name font-sm">Continuous Narrator (10s interval)</span>
+            <label class="switch">
+              <input type="checkbox" id="narrateToggle" />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <form id="fallbackForm" class="fallback-form">
+            <input id="fallbackInput" type="text" placeholder="Or type a question to the assistant..." autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- COLUMN 2: Telemetry, Hardware & Ledger -->
+    <section class="panel-section stats-column">
+      <div class="panel-card telemetry-card">
+        <div class="card-header">
+          <h2 class="card-title">Performance Telemetry</h2>
+        </div>
+        <div class="sparkline-container">
+          <div class="sparkline-header">
+            <span>Latency Timeline</span>
+            <div class="legend">
+              <span class="legend-item"><span class="legend-dot yolo"></span>GPU Inference</span>
+              <span class="legend-item"><span class="legend-dot total"></span>Total RTT</span>
             </div>
-            <div class="voice-settings-grid">
-              <div class="slider-group">
-                <label for="rateRange">Speed: <span id="rateVal">1.0</span>x</label>
-                <input type="range" id="rateRange" min="0.5" max="2.0" step="0.1" value="1.0" />
+          </div>
+          <canvas id="sparklineCanvas" width="450" height="90"></canvas>
+        </div>
+
+        <div class="metrics-grid">
+          <div class="metric-box">
+            <span class="metric-label">GPU Inference</span>
+            <span id="inferenceMs" class="metric-value">— ms</span>
+          </div>
+          <div class="metric-box">
+            <span class="metric-label">Detector Rate</span>
+            <span id="fps" class="metric-value">— FPS</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card hardware-card">
+        <div class="card-header">
+          <h2 class="card-title">Jetson System Resources</h2>
+        </div>
+        <div class="hardware-grid">
+          <div class="hw-item">
+            <span class="hw-label">CPU Usage</span>
+            <span id="statCpu" class="hw-value">—</span>
+          </div>
+          <div class="hw-item">
+            <span class="hw-label">GPU Load</span>
+            <span id="statGpu" class="hw-value">—</span>
+          </div>
+          <div class="hw-item">
+            <span class="hw-label">SoC Temperature</span>
+            <span id="statTemp" class="hw-value">—</span>
+          </div>
+          <div class="hw-item">
+            <span class="hw-label">System Memory</span>
+            <span id="statMem" class="hw-value">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card voice-settings-card">
+        <div class="card-header">
+          <h2 class="card-title">Voice Configuration</h2>
+        </div>
+        <div class="voice-settings-body">
+          <div class="settings-row">
+            <label for="voiceSelect" class="settings-label">Output Voice</label>
+            <select id="voiceSelect" class="voice-select">
+              <option value="">Default Voice</option>
+            </select>
+          </div>
+          <div class="sliders-grid">
+            <div class="slider-group">
+              <div class="slider-header">
+                <span>Speech Speed</span>
+                <span id="rateVal">1.0</span>x
               </div>
-              <div class="slider-group">
-                <label for="pitchRange">Pitch: <span id="pitchVal">1.0</span></label>
-                <input type="range" id="pitchRange" min="0.5" max="2.0" step="0.1" value="1.0" />
+              <input type="range" id="rateRange" min="0.5" max="2.0" step="0.1" value="1.0" />
+            </div>
+            <div class="slider-group">
+              <div class="slider-header">
+                <span>Vocal Pitch</span>
+                <span id="pitchVal">1.0</span>
               </div>
+              <input type="range" id="pitchRange" min="0.5" max="2.0" step="0.1" value="1.0" />
             </div>
           </div>
         </div>
-      </details>
-    </section>
+      </div>
 
-    <section class="stats-pane">
-      <h2>Conversation</h2>
-      <ul id="chatLog" class="chat-log"></ul>
+      <div class="panel-card ledger-card">
+        <div class="card-header">
+          <h2 class="card-title">Conversation Ledger</h2>
+        </div>
+        <div class="ledger-body">
+          <ul id="chatLog" class="chat-log"></ul>
+        </div>
+      </div>
     </section>
   </main>
 
   <div id="kickOverlay" class="kick-overlay hidden">
     <div class="kick-card">
       <div class="kick-icon">🔌</div>
-      <h2>Session Ended</h2>
-      <p>This session was closed by the host.</p>
-      <button onclick="location.reload()">Reconnect</button>
+      <h2>Session Terminated</h2>
+      <p>This session was closed by the host system.</p>
+      <button class="btn-primary" onclick="location.reload()">Reconnect</button>
     </div>
   </div>
 

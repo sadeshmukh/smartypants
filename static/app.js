@@ -30,6 +30,10 @@ const statGpu = document.getElementById("statGpu");
 const statTemp = document.getElementById("statTemp");
 const statMem = document.getElementById("statMem");
 
+// MediaPipe Toggles
+const handsToggle = document.getElementById("handsToggle");
+const poseToggle = document.getElementById("poseToggle");
+
 const SEND_INTERVAL_MS = 120; // ~8 fps capture, deliberately below the WS round-trip budget
 const CAPTURE_W = 640;
 const CAPTURE_H = 480;
@@ -52,11 +56,22 @@ const inferenceHistory = [];
 const rttHistory = [];
 const MAX_HISTORY_LEN = 40;
 
+// Local MediaPipe state
+let mpHands = null;
+let mpPose = null;
+let showHands = false;
+let showPose = false;
+let isProcessingHands = false;
+let isProcessingPose = false;
+let latestHandResults = null;
+let latestPoseResults = null;
+let latestYoloResults = null;
+
 function showKickOverlay() {
   document.getElementById("kickOverlay").classList.remove("hidden");
   if (recognition) { try { recognition.stop(); } catch (_) {} }
   speechSynthesis.cancel();
-  setVoiceStatus("Session ended by host", "unsupported");
+  setVoiceStatus("Session Ended", "idle");
   updateGlow("idle");
 }
 
@@ -87,25 +102,32 @@ function connectWS() {
   ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
-    connStatus.textContent = "connected";
+    connStatus.textContent = "Jetson Connected";
+    const statusDot = document.querySelector(".status-indicator");
+    if (statusDot) statusDot.className = "status-indicator online";
     sendMode();
   };
   ws.onclose = (ev) => {
     if (ev.code === 4001) { showKickOverlay(); return; }
-    connStatus.textContent = "disconnected — retrying…";
+    connStatus.textContent = "Offline — Retrying…";
+    const statusDot = document.querySelector(".status-indicator");
+    if (statusDot) statusDot.className = "status-indicator";
     setTimeout(connectWS, 1500);
   };
-  ws.onerror = () => { connStatus.textContent = "connection error"; };
+  ws.onerror = () => { connStatus.textContent = "Connection Error"; };
 
   ws.onmessage = (ev) => {
     inFlight = false;
     const clientRtt = Date.now() - lastSendTime;
     const msg = JSON.parse(ev.data);
     if (msg.type === "admin_disconnect") { showKickOverlay(); return; }
-    drawOverlay(msg);
+    
+    // Store latest results for the unified draw loop
+    latestYoloResults = msg;
+
     inferenceMsEl.textContent = `${msg.inference_ms.toFixed(1)} ms`;
     fpsEl.textContent = msg.fps.toFixed(1);
-    modeBadge.textContent = `TensorRT: ${msg.tensorrt ? "ON" : "OFF"}`;
+    if (modeBadge) modeBadge.textContent = msg.tensorrt ? "TensorRT Engine" : "PyTorch Fallback";
 
     // Add values to history
     inferenceHistory.push(msg.inference_ms);
@@ -125,7 +147,7 @@ function sendMode() {
     ws.send(JSON.stringify({ type: "set_mode", tensorrt: trtToggle.checked }));
   }
 }
-trtToggle.addEventListener("change", sendMode);
+if (trtToggle) trtToggle.addEventListener("change", sendMode);
 
 function getLabelHue(label) {
   let hash = 0;
@@ -135,59 +157,136 @@ function getLabelHue(label) {
   return Math.abs(hash) % 360;
 }
 
-function drawOverlay(result) {
+// Unified frame render loop incorporating local MediaPipe drawing
+function drawScene() {
   const ctx = overlay.getContext("2d");
   ctx.clearRect(0, 0, overlay.width, overlay.height);
-  const scaleX = overlay.width / result.frame_w;
-  const scaleY = overlay.height / result.frame_h;
-  ctx.lineWidth = 2.5;
-  ctx.font = "bold 13px 'Outfit', sans-serif";
 
-  result.boxes.forEach((box, i) => {
-    const [x1, y1, x2, y2] = box;
-    const px1 = x1 * scaleX;
-    const py1 = y1 * scaleY;
-    const pw = (x2 - x1) * scaleX;
-    const ph = (y2 - y1) * scaleY;
-    const label = `${result.labels[i].toUpperCase()} ${(result.scores[i] * 100).toFixed(0)}%`;
-    
-    const hue = getLabelHue(result.labels[i]);
-    const strokeColor = `hsla(${hue}, 85%, 60%, 1)`;
-    const fillColor = `hsla(${hue}, 85%, 60%, 0.12)`;
-    const badgeColor = `hsla(${hue}, 85%, 55%, 1)`;
+  // 1. Draw YOLO boxes
+  if (latestYoloResults) {
+    const scaleX = overlay.width / latestYoloResults.frame_w;
+    const scaleY = overlay.height / latestYoloResults.frame_h;
+    ctx.lineWidth = 2;
+    ctx.font = "bold 11px 'Outfit', sans-serif";
 
-    ctx.fillStyle = fillColor;
-    ctx.fillRect(px1, py1, pw, ph);
+    latestYoloResults.boxes.forEach((box, i) => {
+      const [x1, y1, x2, y2] = box;
+      const px1 = x1 * scaleX;
+      const py1 = y1 * scaleY;
+      const pw = (x2 - x1) * scaleX;
+      const ph = (y2 - y1) * scaleY;
+      const labelText = latestYoloResults.labels[i];
+      const score = latestYoloResults.scores[i];
+      const displayLabel = `${labelText.toUpperCase()} ${(score * 100).toFixed(0)}%`;
 
-    ctx.strokeStyle = strokeColor;
-    ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
-    ctx.shadowBlur = 4;
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(px1, py1, pw, ph, 4);
-    } else {
-      ctx.rect(px1, py1, pw, ph);
-    }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+      const hue = getLabelHue(labelText);
+      const strokeColor = `hsla(${hue}, 70%, 55%, 1)`;
+      const fillColor = `hsla(${hue}, 70%, 55%, 0.08)`;
+      const badgeColor = `hsla(${hue}, 70%, 50%, 1)`;
 
-    const textW = ctx.measureText(label).width + 10;
-    ctx.fillStyle = badgeColor;
-    
-    let badgeY = py1 - 22;
-    if (badgeY < 0) badgeY = py1 + 2;
+      ctx.fillStyle = fillColor;
+      ctx.fillRect(px1, py1, pw, ph);
 
-    ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(px1, badgeY, textW, 20, 3);
-    } else {
-      ctx.rect(px1, badgeY, textW, 20);
-    }
-    ctx.fill();
+      ctx.strokeStyle = strokeColor;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(px1, py1, pw, ph, 4);
+      } else {
+        ctx.rect(px1, py1, pw, ph);
+      }
+      ctx.stroke();
 
-    ctx.fillStyle = "#000000";
-    ctx.fillText(label, px1 + 5, badgeY + 14);
-  });
+      const textW = ctx.measureText(displayLabel).width + 10;
+      ctx.fillStyle = badgeColor;
+      
+      let badgeY = py1 - 18;
+      if (badgeY < 0) badgeY = py1 + 2;
+
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(px1, badgeY, textW, 16, 2);
+      } else {
+        ctx.rect(px1, badgeY, textW, 16);
+      }
+      ctx.fill();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(displayLabel, px1 + 5, badgeY + 12);
+    });
+  }
+
+  // 2. Draw MediaPipe Hands
+  if (showHands && latestHandResults && latestHandResults.multiHandLandmarks) {
+    latestHandResults.multiHandLandmarks.forEach((landmarks) => {
+      ctx.strokeStyle = "rgba(99, 102, 241, 0.7)";
+      ctx.lineWidth = 2.5;
+
+      const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4],
+        [0, 5], [5, 6], [6, 7], [7, 8],
+        [5, 9], [9, 10], [10, 11], [11, 12],
+        [9, 13], [13, 14], [14, 15], [15, 16],
+        [13, 17], [0, 17], [17, 18], [18, 19], [19, 20]
+      ];
+
+      connections.forEach(([p1, p2]) => {
+        const pt1 = landmarks[p1];
+        const pt2 = landmarks[p2];
+        ctx.beginPath();
+        ctx.moveTo(pt1.x * overlay.width, pt1.y * overlay.height);
+        ctx.lineTo(pt2.x * overlay.width, pt2.y * overlay.height);
+        ctx.stroke();
+      });
+
+      landmarks.forEach((pt) => {
+        ctx.beginPath();
+        ctx.arc(pt.x * overlay.width, pt.y * overlay.height, 3.5, 0, 2 * Math.PI);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.strokeStyle = "#4f46e5";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      });
+    });
+  }
+
+  // 3. Draw MediaPipe Pose
+  if (showPose && latestPoseResults && latestPoseResults.poseLandmarks) {
+    const landmarks = latestPoseResults.poseLandmarks;
+    const poseConnections = [
+      [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
+      [11, 23], [12, 24], [23, 24],
+      [23, 25], [24, 26], [25, 27], [26, 28]
+    ];
+
+    ctx.strokeStyle = "rgba(168, 85, 247, 0.7)";
+    ctx.lineWidth = 2.5;
+
+    poseConnections.forEach(([p1, p2]) => {
+      const pt1 = landmarks[p1];
+      const pt2 = landmarks[p2];
+      if (pt1.visibility > 0.5 && pt2.visibility > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(pt1.x * overlay.width, pt1.y * overlay.height);
+        ctx.lineTo(pt2.x * overlay.width, pt2.y * overlay.height);
+        ctx.stroke();
+      }
+    });
+
+    landmarks.forEach((pt) => {
+      if (pt.visibility > 0.5) {
+        ctx.beginPath();
+        ctx.arc(pt.x * overlay.width, pt.y * overlay.height, 3, 0, 2 * Math.PI);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.strokeStyle = "#9333ea";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    });
+  }
+
+  requestAnimationFrame(drawScene);
 }
 
 function sendLoop() {
@@ -216,7 +315,7 @@ function drawSparkline() {
   ctx.clearRect(0, 0, w, h);
 
   // Draw background grid lines
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
   ctx.lineWidth = 1;
   for (let y = 10; y < h; y += 20) {
     ctx.beginPath();
@@ -244,7 +343,7 @@ function drawSparkline() {
     }
     
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 2.0;
     ctx.stroke();
 
     // Fill underneath
@@ -256,15 +355,15 @@ function drawSparkline() {
 
   // Create gradients
   const yoloGrad = ctx.createLinearGradient(0, 0, 0, h);
-  yoloGrad.addColorStop(0, "rgba(57, 211, 83, 0.15)");
-  yoloGrad.addColorStop(1, "rgba(57, 211, 83, 0)");
+  yoloGrad.addColorStop(0, "rgba(16, 185, 129, 0.12)");
+  yoloGrad.addColorStop(1, "rgba(16, 185, 129, 0)");
 
   const rttGrad = ctx.createLinearGradient(0, 0, 0, h);
-  rttGrad.addColorStop(0, "rgba(88, 166, 255, 0.15)");
-  rttGrad.addColorStop(1, "rgba(88, 166, 255, 0)");
+  rttGrad.addColorStop(0, "rgba(99, 102, 241, 0.12)");
+  rttGrad.addColorStop(1, "rgba(99, 102, 241, 0)");
 
-  drawLine(rttHistory, "#58a6ff", rttGrad);
-  drawLine(inferenceHistory, "#39d353", yoloGrad);
+  drawLine(rttHistory, "#6366f1", rttGrad);
+  drawLine(inferenceHistory, "#10b981", yoloGrad);
 }
 
 function addChatEntry(role, text, imageSrc = null) {
@@ -292,7 +391,7 @@ function addChatEntry(role, text, imageSrc = null) {
         w.document.write(`
           <html>
             <head><title>Camera Snapshot</title></head>
-            <body style="margin:0; background:#0b0f14; display:flex; align-items:center; justify-content:center; height:100vh;">
+            <body style="margin:0; background:#09090b; display:flex; align-items:center; justify-content:center; height:100vh;">
               <img src="${imageSrc}" style="max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.5);" />
             </body>
           </html>
@@ -305,20 +404,22 @@ function addChatEntry(role, text, imageSrc = null) {
   chatLog.prepend(li);
 }
 
-function setVoiceStatus(text, cls) {
-  voiceStatus.textContent = text;
-  voiceStatus.className = `voice-status ${cls}`;
+function setVoiceStatus(text, statusType) {
+  if (voiceStatus) {
+    voiceStatus.textContent = text;
+    voiceStatus.className = `voice-status status-${statusType}`;
+  }
 }
 
 // ---- Debug: live transcript of what the browser's speech recognizer hears ----
 function applyDebugVisibility() {
-  debugPanel.style.display = debugToggle.checked ? "block" : "none";
+  if (debugPanel) debugPanel.style.display = debugToggle.checked ? "block" : "none";
 }
-debugToggle.addEventListener("change", applyDebugVisibility);
+if (debugToggle) debugToggle.addEventListener("change", applyDebugVisibility);
 applyDebugVisibility();
 
 function setInterimTranscript(text) {
-  interimTranscriptEl.textContent = text || "(nothing yet)";
+  if (interimTranscriptEl) interimTranscriptEl.textContent = text || "...";
 }
 
 function logFinalTranscript(text, heardWake) {
@@ -329,7 +430,7 @@ function logFinalTranscript(text, heardWake) {
   time.textContent = new Date().toLocaleTimeString();
   li.appendChild(time);
   li.appendChild(document.createTextNode(` "${text}"${heardWake ? " — wake phrase detected" : ""}`));
-  transcriptLog.prepend(li);
+  if (transcriptLog) transcriptLog.prepend(li);
 }
 
 // ---- Voice Q&A (shared by wake-word and the manual text fallback) ----
@@ -359,7 +460,7 @@ async function askAboutScene(question) {
   } catch (err) {
     addChatEntry("assistant", `(error: ${err.message})`);
   } finally {
-    setVoiceStatus('👂 Listening for "Hey Assistant"…', "idle");
+    setVoiceStatus("Listening...", "idle");
     updateGlow("yolo");
     resumeRecognition();
   }
@@ -378,13 +479,15 @@ function speak(text) {
 }
 
 // ---- Manual fallback (demo safety net if voice recognition is flaky) ----
-fallbackForm.addEventListener("submit", (e) => {
-  e.preventDefault();
-  const q = fallbackInput.value.trim();
-  if (!q) return;
-  fallbackInput.value = "";
-  askAboutScene(q);
-});
+if (fallbackForm) {
+  fallbackForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = fallbackInput.value.trim();
+    if (!q) return;
+    fallbackInput.value = "";
+    askAboutScene(q);
+  });
+}
 
 // ---- Wake-word always-listening voice loop ----
 const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -400,7 +503,7 @@ function resumeRecognition() {
 
 function setupVoice() {
   if (!SpeechRecognitionImpl) {
-    setVoiceStatus("⌨️ Voice not supported in this browser — use the text box below", "unsupported");
+    setVoiceStatus("Speech Error", "idle");
     return;
   }
   recognition = new SpeechRecognitionImpl();
@@ -446,7 +549,7 @@ function setupVoice() {
   };
   recognition.onerror = (e) => {
     if (e.error === "no-speech" || e.error === "aborted") return;
-    setVoiceStatus(`⚠️ voice error: ${e.error} — retrying…`, "idle");
+    setVoiceStatus("Listening...", "idle");
   };
 
   recognition.start();
@@ -529,6 +632,84 @@ function setupSpeechControls() {
   }
 }
 
+// ---- Local MediaPipe vision tasks loop ----
+function setupMediaPipe() {
+  if (typeof Hands !== "undefined") {
+    mpHands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+    mpHands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    mpHands.onResults((results) => {
+      latestHandResults = results;
+    });
+  }
+
+  if (typeof Pose !== "undefined") {
+    mpPose = new Pose({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+    }});
+    mpPose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    mpPose.onResults((results) => {
+      latestPoseResults = results;
+    });
+  }
+
+  // Hook up MediaPipe local toggles
+  if (handsToggle) {
+    handsToggle.addEventListener("change", () => {
+      showHands = handsToggle.checked;
+      if (!showHands) latestHandResults = null;
+    });
+  }
+
+  if (poseToggle) {
+    poseToggle.addEventListener("change", () => {
+      showPose = poseToggle.checked;
+      if (!showPose) latestPoseResults = null;
+    });
+  }
+}
+
+async function processLocalVision() {
+  if (video.readyState >= 2) {
+    if (showHands && mpHands && !isProcessingHands) {
+      isProcessingHands = true;
+      try {
+        await mpHands.send({image: video});
+      } catch (err) {
+        console.error("Hands error", err);
+      }
+      isProcessingHands = false;
+    } else if (!showHands) {
+      latestHandResults = null;
+    }
+
+    if (showPose && mpPose && !isProcessingPose) {
+      isProcessingPose = true;
+      try {
+        await mpPose.send({image: video});
+      } catch (err) {
+        console.error("Pose error", err);
+      }
+      isProcessingPose = false;
+    } else if (!showPose) {
+      latestPoseResults = null;
+    }
+  }
+  setTimeout(processLocalVision, 33);
+}
+
 (async function init() {
   try {
     await startCamera();
@@ -540,8 +721,14 @@ function setupSpeechControls() {
   sendLoop();
   setupVoice();
   
-  // Set up new telemetry stats, VLM presets, narrator loops, and TTS controls
   startStatsLoop();
   setupPresetsAndNarrator();
   setupSpeechControls();
+  
+  // Set up and start MediaPipe local perception tasks
+  setupMediaPipe();
+  processLocalVision();
+  
+  // Start the unified 2D canvas drawing scene loop
+  drawScene();
 })();
