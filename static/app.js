@@ -108,13 +108,17 @@ function connectWS() {
     sendMode();
   };
   ws.onclose = (ev) => {
+    console.log("WebSocket closed. Code:", ev.code, "Reason:", ev.reason);
     if (ev.code === 4001) { showKickOverlay(); return; }
     connStatus.textContent = "Offline — Retrying…";
     const statusDot = document.querySelector(".status-indicator");
     if (statusDot) statusDot.className = "status-indicator";
     setTimeout(connectWS, 1500);
   };
-  ws.onerror = () => { connStatus.textContent = "Connection Error"; };
+  ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
+    connStatus.textContent = "Connection Error";
+  };
 
   ws.onmessage = (ev) => {
     inFlight = false;
@@ -607,6 +611,7 @@ function populateVoiceList() {
 }
 
 function setupSpeechControls() {
+  if (typeof speechSynthesis === 'undefined') return;
   populateVoiceList();
   if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = populateVoiceList;
