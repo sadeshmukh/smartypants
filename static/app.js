@@ -102,6 +102,7 @@ function connectWS() {
   ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
+    document.getElementById("kickOverlay").classList.add("hidden");
     connStatus.textContent = "Jetson Connected";
     const statusDot = document.querySelector(".status-indicator");
     if (statusDot) statusDot.className = "status-indicator online";

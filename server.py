@@ -103,7 +103,7 @@ async def ws_detect(ws: WebSocket):
                 "frame_w": w,
                 "frame_h": h,
             }))
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         connected_clients.pop(client_id, None)

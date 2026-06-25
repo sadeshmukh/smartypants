@@ -773,6 +773,10 @@ input:checked + .slider:before {
   backdrop-filter: blur(12px);
 }
 
+.kick-overlay.hidden {
+  display: none;
+}
+
 .kick-card {
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
