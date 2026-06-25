@@ -231,26 +231,56 @@ body {
   pointer-events: none;
 }
 
-/* Crisp 1px border state indicators instead of glows */
+/* Premium glowing border state indicators */
 .video-wrap.state-yolo {
-  border-color: rgba(99, 102, 241, 0.4);
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.15);
+}
+.video-wrap.state-listening {
+  border-color: var(--accent);
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+  animation: glow-pulse-indigo 1.5s infinite ease-in-out;
 }
 .video-wrap.state-thinking {
   border-color: var(--amber);
-  animation: border-pulse-amber 1.5s infinite ease-in-out;
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.5);
+  animation: glow-pulse-amber 1.5s infinite ease-in-out;
 }
 .video-wrap.state-speaking {
   border-color: var(--emerald);
-  animation: border-pulse-emerald 1.5s infinite ease-in-out;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.5);
+  animation: glow-pulse-emerald 1.5s infinite ease-in-out;
 }
 
-@keyframes border-pulse-amber {
-  0%, 100% { border-color: rgba(245, 158, 11, 0.3); }
-  50% { border-color: rgba(245, 158, 11, 1); }
+@keyframes glow-pulse-indigo {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(99, 102, 241, 0.3);
+    border-color: rgba(99, 102, 241, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.8);
+    border-color: rgba(99, 102, 241, 1);
+  }
 }
-@keyframes border-pulse-emerald {
-  0%, 100% { border-color: rgba(16, 185, 129, 0.3); }
-  50% { border-color: rgba(16, 185, 129, 1); }
+@keyframes glow-pulse-amber {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+    border-color: rgba(245, 158, 11, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.8);
+    border-color: rgba(245, 158, 11, 1);
+  }
+}
+@keyframes glow-pulse-emerald {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+    border-color: rgba(16, 185, 129, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.8);
+    border-color: rgba(16, 185, 129, 1);
+  }
 }
 
 .hidden {

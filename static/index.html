@@ -50,13 +50,24 @@
 
       <div class="panel-card controls-card">
         <div class="card-header">
-          <h2 class="card-title">Model Overlays</h2>
+          <h2 class="card-title">Model Overlays & Gestures</h2>
         </div>
         <div class="controls-grid">
           <div class="switch-row">
             <div class="switch-info">
-              <span class="switch-name">Object Detection (YOLOv8)</span>
-              <span class="switch-desc">Jetson server-side fast path</span>
+              <span class="switch-name">YOLOv8 Bounding Boxes</span>
+              <span class="switch-desc">Detect objects and draw overlay boxes</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="yoloToggle" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="switch-row">
+            <div class="switch-info">
+              <span class="switch-name">TensorRT Acceleration</span>
+              <span class="switch-desc">Jetson server-side hardware acceleration</span>
             </div>
             <label class="switch">
               <input type="checkbox" id="trtToggle" checked />
@@ -82,6 +93,17 @@
             </div>
             <label class="switch">
               <input type="checkbox" id="poseToggle" />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="switch-row">
+            <div class="switch-info">
+              <span class="switch-name">Wave to Wake</span>
+              <span class="switch-desc">Wave hand at camera to trigger assistant</span>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="waveToggle" />
               <span class="slider"></span>
             </label>
           </div>
@@ -149,6 +171,15 @@
             </div>
           </div>
           <canvas id="sparklineCanvas" width="450" height="90"></canvas>
+        <div class="switch-row compact">
+          <div class="switch-info">
+            <span class="switch-name font-sm">Use GPU Acceleration</span>
+            <span class="switch-desc">Uncheck to run YOLOv8 on Jetson CPU</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="gpuToggle" checked />
+            <span class="slider"></span>
+          </label>
         </div>
 
         <div class="metrics-grid">

@@ -12,20 +12,23 @@ from jetson_object_detection_toolkit import ObjectDetectionToolkit  # noqa: E402
 _toolkits = {}
 
 
-def get_toolkit(use_tensorrt: bool) -> ObjectDetectionToolkit:
-    key = "trt" if use_tensorrt else "pt"
+def get_toolkit(use_tensorrt: bool, use_gpu: bool = True) -> ObjectDetectionToolkit:
+    device = "cuda" if use_gpu else "cpu"
+    key = f"{device}_{'trt' if use_tensorrt else 'pt'}"
     if key not in _toolkits:
-        print(f"[detector_manager] loading YOLO toolkit (tensorrt={use_tensorrt})...")
+        print(f"[detector_manager] loading YOLO toolkit (device={device}, tensorrt={use_tensorrt})...")
         t0 = time.time()
+        # TensorRT only runs on CUDA GPU, so if using CPU, force use_tensorrt=False
+        actual_trt = use_tensorrt if use_gpu else False
         _toolkits[key] = ObjectDetectionToolkit(
-            "yolo", "cuda", model_path="yolov8n.pt", use_tensorrt=use_tensorrt
+            "yolo", device, model_path="yolov8n.pt", use_tensorrt=actual_trt
         )
         print(f"[detector_manager] ready in {time.time() - t0:.1f}s")
     return _toolkits[key]
 
 
-def detect(frame, use_tensorrt: bool, conf_threshold: float = 0.25, iou_threshold: float = 0.45):
-    toolkit = get_toolkit(use_tensorrt)
+def detect(frame, use_tensorrt: bool, use_gpu: bool = True, conf_threshold: float = 0.25, iou_threshold: float = 0.45):
+    toolkit = get_toolkit(use_tensorrt, use_gpu)
     return toolkit.detect(frame, conf_threshold=conf_threshold, iou_threshold=iou_threshold)
 
 

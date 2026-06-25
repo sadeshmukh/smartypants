@@ -50,6 +50,14 @@ button { cursor: pointer; border: none; border-radius: 8px; font-weight: 600; }
 .btn-danger:hover { background: #f85149; }
 .btn-danger:disabled { background: #2a1414; color: #8b949e; cursor: default; }
 
+.btn-wave {
+  background: #238636;
+  color: #fff;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+.btn-wave:hover { background: #2ea043; }
+
 .card {
   background: #161b22;
   border: 1px solid #30363d;
@@ -81,6 +89,11 @@ tr:hover td { background: #1c2128; }
 
 <div class="top-bar">
   <div class="pill">Sessions: <strong id="clientCount">—</strong></div>
+  <!-- Global Cloud Toggle -->
+  <div class="pill" style="display: flex; align-items: center; gap: 8px;">
+    <label for="forceCloudToggle" style="font-weight: 500; cursor: pointer;">Force NVIDIA Cloud Only:</label>
+    <input type="checkbox" id="forceCloudToggle" onchange="toggleGlobalCloud(this.checked)" style="cursor: pointer;" />
+  </div>
   <button class="btn-danger" id="kickAllBtn" onclick="kickAll()" disabled>Disconnect All</button>
   <span class="live-dot" title="Live"></span>
 </div>
@@ -93,6 +106,8 @@ tr:hover td { background: #1c2128; }
         <th>IP</th>
         <th>Connected</th>
         <th>Frames</th>
+        <th>Override to Jetson</th>
+        <th>Remote Trigger</th>
         <th></th>
       </tr>
     </thead>
@@ -105,6 +120,40 @@ function fmtDuration(s) {
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+async function refreshGlobalConfig() {
+  try {
+    const res = await fetch("/api/admin/config");
+    const config = await res.json();
+    document.getElementById("forceCloudToggle").checked = config.force_cloud;
+  } catch (e) {
+    console.error("Error loading config:", e);
+  }
+}
+
+async function toggleGlobalCloud(checked) {
+  await fetch("/api/admin/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ force_cloud: checked })
+  });
+}
+
+async function toggleClientOverride(clientId, checked) {
+  await fetch(`/api/admin/clients/${encodeURIComponent(clientId)}/override`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ override_to_jetson: checked })
+  });
+}
+
+async function waveClient(clientId) {
+  try {
+    await fetch(`/api/admin/clients/${encodeURIComponent(clientId)}/wave`, { method: "POST" });
+  } catch (e) {
+    console.error("Error waving to client:", e);
+  }
 }
 
 async function refresh() {
@@ -121,7 +170,7 @@ async function refresh() {
 
   const tbody = document.getElementById("tbody");
   if (clients.length === 0) {
-    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No clients connected</td></tr>';
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="7">No clients connected</td></tr>';
     return;
   }
   tbody.innerHTML = clients.map(c => `
@@ -130,6 +179,10 @@ async function refresh() {
       <td>${c.ip}</td>
       <td>${fmtDuration(c.connected_seconds)}</td>
       <td>${c.frame_count.toLocaleString()}</td>
+      <td>
+        <input type="checkbox" ${c.override_to_jetson ? 'checked' : ''} onchange="toggleClientOverride('${c.id}', this.checked)" style="cursor: pointer;" />
+      </td>
+      <td><button class="btn-wave" onclick="waveClient('${c.id}')">👋 Wave</button></td>
       <td><button class="btn-danger" onclick="kickOne('${c.id}')">Disconnect</button></td>
     </tr>
   `).join("");
@@ -146,6 +199,7 @@ async function kickAll() {
   refresh();
 }
 
+refreshGlobalConfig();
 refresh();
 setInterval(refresh, 2000);
 </script>

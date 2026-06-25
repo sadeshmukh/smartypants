@@ -87,3 +87,42 @@ async def ask_with_camera_tool(question: str, get_frame_b64, max_tokens: int = 1
         })
         r2.raise_for_status()
         return r2.json()["choices"][0]["message"]["content"].strip()
+
+
+async def ask_with_nvidia_nim_vlm(question: str, get_frame_b64, max_tokens: int = 128) -> str:
+    import os
+    api_key = os.environ.get("NVIDIA_API_KEY")
+    if not api_key:
+        return "Error: NVIDIA_API_KEY environment variable is not set."
+
+    frame_b64 = get_frame_b64()
+    if not frame_b64:
+        return "No camera frame available yet."
+
+    prompt = build_qa_prompt(question)
+
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "meta/llama-3.2-11b-vision-instruct",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame_b64}"}}
+                ]
+            }
+        ],
+        "max_tokens": max_tokens
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        res_json = response.json()
+        return res_json["choices"][0]["message"]["content"].strip()
+

@@ -2,6 +2,9 @@ const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const capture = document.getElementById("capture");
 const trtToggle = document.getElementById("trtToggle");
+const yoloToggle = document.getElementById("yoloToggle");
+const waveToggle = document.getElementById("waveToggle");
+const gpuToggle = document.getElementById("gpuToggle");
 const connStatus = document.getElementById("connStatus");
 const inferenceMsEl = document.getElementById("inferenceMs");
 const fpsEl = document.getElementById("fps");
@@ -45,6 +48,8 @@ capture.height = CAPTURE_H;
 let ws = null;
 let inFlight = false;
 let lastSendTime = 0;
+let isListeningAfterWake = false;
+let myClientId = null;
 
 // Speech synthesis settings
 let selectedVoice = null;
@@ -77,6 +82,9 @@ function showKickOverlay() {
 
 function updateGlow(state) {
   if (videoWrap) {
+    if (isListeningAfterWake && (state === "yolo" || state === "idle")) {
+      state = "listening";
+    }
     videoWrap.className = `video-wrap state-${state}`;
   }
 }
@@ -126,13 +134,27 @@ function connectWS() {
     const clientRtt = Date.now() - lastSendTime;
     const msg = JSON.parse(ev.data);
     if (msg.type === "admin_disconnect") { showKickOverlay(); return; }
+    if (msg.type === "welcome") {
+      myClientId = msg.client_id;
+      return;
+    }
+    if (msg.type === "wave_trigger") {
+      triggerWaveAction();
+      return;
+    }
     
     // Store latest results for the unified draw loop
     latestYoloResults = msg;
 
-    inferenceMsEl.textContent = `${msg.inference_ms.toFixed(1)} ms`;
-    fpsEl.textContent = msg.fps.toFixed(1);
-    if (modeBadge) modeBadge.textContent = msg.tensorrt ? "TensorRT Engine" : "PyTorch Fallback";
+    inferenceMsEl.textContent = yoloToggle.checked ? `${msg.inference_ms.toFixed(1)} ms` : "— ms";
+    fpsEl.textContent = yoloToggle.checked ? msg.fps.toFixed(1) : "—";
+    if (modeBadge) {
+      if (!yoloToggle.checked) {
+        modeBadge.textContent = "YOLO Disabled";
+      } else {
+        modeBadge.textContent = msg.tensorrt ? "TensorRT Engine" : "PyTorch Fallback";
+      }
+    }
 
     // Add values to history
     inferenceHistory.push(msg.inference_ms);
@@ -142,17 +164,36 @@ function connectWS() {
     drawSparkline();
 
     if (!busy) {
-      updateGlow("yolo");
+      updateGlow(yoloToggle.checked ? "yolo" : "idle");
     }
   };
 }
 
 function sendMode() {
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "set_mode", tensorrt: trtToggle.checked }));
+    ws.send(JSON.stringify({ 
+      type: "set_mode", 
+      tensorrt: trtToggle.checked,
+      yolo_enabled: yoloToggle.checked,
+      gpu: gpuToggle ? gpuToggle.checked : true
+    }));
   }
 }
 if (trtToggle) trtToggle.addEventListener("change", sendMode);
+if (yoloToggle) {
+  yoloToggle.addEventListener("change", () => {
+    if (!yoloToggle.checked) {
+      latestYoloResults = null;
+    }
+    sendMode();
+    if (!busy) {
+      updateGlow(yoloToggle.checked ? "yolo" : "idle");
+    }
+  });
+}
+if (gpuToggle) {
+  gpuToggle.addEventListener("change", sendMode);
+}
 
 function getLabelHue(label) {
   let hash = 0;
@@ -440,6 +481,7 @@ function logFinalTranscript(text, heardWake) {
 
 // ---- Voice Q&A (shared by wake-word and the manual text fallback) ----
 async function askAboutScene(question) {
+  isListeningAfterWake = false;
   let snapshotUrl = null;
   try {
     const ctx = capture.getContext("2d");
@@ -454,7 +496,7 @@ async function askAboutScene(question) {
     const res = await fetch("/api/describe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, client_id: myClientId }),
     });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
     const { caption } = await res.json();
@@ -466,21 +508,47 @@ async function askAboutScene(question) {
     addChatEntry("assistant", `(error: ${err.message})`);
   } finally {
     setVoiceStatus("Listening...", "idle");
-    updateGlow("yolo");
+    updateGlow(yoloToggle.checked ? "yolo" : "idle");
     resumeRecognition();
   }
 }
 
 function speak(text) {
   return new Promise((resolve) => {
-    const utter = new SpeechSynthesisUtterance(text);
-    if (selectedVoice) utter.voice = selectedVoice;
-    utter.rate = ttsRate;
-    utter.pitch = ttsPitch;
-    utter.onend = resolve;
-    utter.onerror = resolve;
-    speechSynthesis.speak(utter);
+    const clientIdParam = myClientId ? `&client_id=${myClientId}` : '';
+    
+    fetch(`/api/tts?text=${encodeURIComponent(text)}${clientIdParam}`)
+      .then(response => {
+        if (response.status === 204) {
+          useBrowserTTS(text, resolve);
+        } else if (response.ok) {
+          const audioUrl = `/api/tts?text=${encodeURIComponent(text)}${clientIdParam}`;
+          const audio = new Audio(audioUrl);
+          audio.onended = resolve;
+          audio.onerror = () => useBrowserTTS(text, resolve);
+          audio.play().catch(() => useBrowserTTS(text, resolve));
+        } else {
+          useBrowserTTS(text, resolve);
+        }
+      })
+      .catch(() => {
+        useBrowserTTS(text, resolve);
+      });
   });
+}
+
+function useBrowserTTS(text, resolve) {
+  if (typeof speechSynthesis === 'undefined') {
+    resolve();
+    return;
+  }
+  const utter = new SpeechSynthesisUtterance(text);
+  if (selectedVoice) utter.voice = selectedVoice;
+  utter.rate = ttsRate;
+  utter.pitch = ttsPitch;
+  utter.onend = resolve;
+  utter.onerror = resolve;
+  speechSynthesis.speak(utter);
 }
 
 // ---- Manual fallback (demo safety net if voice recognition is flaky) ----
@@ -530,6 +598,13 @@ function setupVoice() {
     if (interim) setInterimTranscript(interim);
 
     if (busy) return;
+
+    // Check if the wake phrase is in the interim transcript
+    if (interim.toLowerCase().includes(WAKE_PHRASE)) {
+      isListeningAfterWake = true;
+      updateGlow("listening");
+    }
+
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (!result.isFinal) continue;
@@ -638,6 +713,71 @@ function setupSpeechControls() {
   }
 }
 
+// ---- Wave Gesture Detection Logic ----
+function detectWave(history) {
+  if (history.length < 15) return false;
+  
+  let minX = 1.0;
+  let maxX = 0.0;
+  let minY = 1.0;
+  let maxY = 0.0;
+  for (const pt of history) {
+    if (pt.x < minX) minX = pt.x;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+  
+  const spanX = maxX - minX;
+  
+  // A wave should have a minimum horizontal width (e.g. 0.08 of frame width)
+  if (spanX < 0.08) return false;
+  
+  // Count sign changes of differences (directions)
+  let directions = [];
+  let prevPt = history[0];
+  for (let i = 1; i < history.length; i++) {
+    const pt = history[i];
+    const dx = pt.x - prevPt.x;
+    if (Math.abs(dx) > 0.015) { // threshold to ignore tiny jitters
+      directions.push(dx > 0 ? 1 : -1);
+      prevPt = pt;
+    }
+  }
+  
+  // Count direction changes
+  let directionChanges = 0;
+  let lastDir = null;
+  for (const dir of directions) {
+    if (lastDir !== null && dir !== lastDir) {
+      directionChanges++;
+    }
+    lastDir = dir;
+  }
+  
+  return directionChanges >= 3;
+}
+
+function triggerWaveAction() {
+  if (busy) return;
+  console.log("Wave detected! Triggering assistant...");
+  busy = true;
+  if (recognition) {
+    try { recognition.stop(); } catch (_) {}
+  }
+  
+  // Add a nice visual indicator in the transcripts log
+  const li = document.createElement("li");
+  li.className = "heard-wake";
+  const time = document.createElement("time");
+  time.textContent = new Date().toLocaleTimeString();
+  li.appendChild(time);
+  li.appendChild(document.createTextNode(" 👋 Wave detected — triggering assistant"));
+  if (transcriptLog) transcriptLog.prepend(li);
+  
+  askAboutScene("Describe what you see.");
+}
+
 // ---- Local MediaPipe vision tasks loop ----
 function setupMediaPipe() {
   if (typeof Hands !== "undefined") {
@@ -650,8 +790,31 @@ function setupMediaPipe() {
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
+    
+    let waveHistory = [];
+    let lastWaveTime = 0;
+    
     mpHands.onResults((results) => {
       latestHandResults = results;
+      
+      if (waveToggle && waveToggle.checked && results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const hand = results.multiHandLandmarks[0];
+        const palm = hand[9]; // middle finger MCP (palm center area)
+        const now = Date.now();
+        
+        waveHistory = waveHistory.filter(pt => now - pt.t < 1500);
+        waveHistory.push({ x: palm.x, y: palm.y, t: now });
+        
+        if (detectWave(waveHistory)) {
+          if (now - lastWaveTime > 5000) {
+            lastWaveTime = now;
+            waveHistory = [];
+            triggerWaveAction();
+          }
+        }
+      } else {
+        waveHistory = [];
+      }
     });
   }
 
@@ -689,7 +852,8 @@ function setupMediaPipe() {
 
 async function processLocalVision() {
   if (video.readyState >= 2) {
-    if (showHands && mpHands && !isProcessingHands) {
+    const runHands = showHands || (waveToggle && waveToggle.checked);
+    if (runHands && mpHands && !isProcessingHands) {
       isProcessingHands = true;
       try {
         await mpHands.send({image: video});
@@ -697,7 +861,7 @@ async function processLocalVision() {
         console.error("Hands error", err);
       }
       isProcessingHands = false;
-    } else if (!showHands) {
+    } else if (!runHands) {
       latestHandResults = null;
     }
 
