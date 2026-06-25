@@ -2,23 +2,36 @@ const video = document.getElementById("video");
 const overlay = document.getElementById("overlay");
 const capture = document.getElementById("capture");
 const trtToggle = document.getElementById("trtToggle");
-const describeBtn = document.getElementById("describeBtn");
 const connStatus = document.getElementById("connStatus");
 const inferenceMsEl = document.getElementById("inferenceMs");
 const fpsEl = document.getElementById("fps");
 const modeBadge = document.getElementById("modeBadge");
-const captionLog = document.getElementById("captionLog");
+const chatLog = document.getElementById("chatLog");
+const voiceStatus = document.getElementById("voiceStatus");
+const fallbackForm = document.getElementById("fallbackForm");
+const fallbackInput = document.getElementById("fallbackInput");
+const debugToggle = document.getElementById("debugToggle");
+const debugPanel = document.getElementById("debugPanel");
+const interimTranscriptEl = document.getElementById("interimTranscript");
+const transcriptLog = document.getElementById("transcriptLog");
 
 const SEND_INTERVAL_MS = 120; // ~8 fps capture, deliberately below the WS round-trip budget
 const CAPTURE_W = 640;
 const CAPTURE_H = 480;
+const WAKE_PHRASE = "hey assistant"; // one-line tweak if it's hard to hear live
 
 capture.width = CAPTURE_W;
 capture.height = CAPTURE_H;
 
 let ws = null;
 let inFlight = false;
-let latestResult = null;
+
+function showKickOverlay() {
+  document.getElementById("kickOverlay").classList.remove("hidden");
+  if (recognition) { try { recognition.stop(); } catch (_) {} }
+  speechSynthesis.cancel();
+  setVoiceStatus("Session ended by host", "unsupported");
+}
 
 async function startCamera() {
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -44,7 +57,8 @@ function connectWS() {
     connStatus.textContent = "connected";
     sendMode();
   };
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
+    if (ev.code === 4001) { showKickOverlay(); return; }
     connStatus.textContent = "disconnected — retrying…";
     setTimeout(connectWS, 1500);
   };
@@ -52,12 +66,12 @@ function connectWS() {
 
   ws.onmessage = (ev) => {
     inFlight = false;
-    const result = JSON.parse(ev.data);
-    latestResult = result;
-    drawOverlay(result);
-    inferenceMsEl.textContent = `${result.inference_ms.toFixed(1)} ms`;
-    fpsEl.textContent = result.fps.toFixed(1);
-    modeBadge.textContent = `TensorRT: ${result.tensorrt ? "ON" : "OFF"}`;
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "admin_disconnect") { showKickOverlay(); return; }
+    drawOverlay(msg);
+    inferenceMsEl.textContent = `${msg.inference_ms.toFixed(1)} ms`;
+    fpsEl.textContent = msg.fps.toFixed(1);
+    modeBadge.textContent = `TensorRT: ${msg.tensorrt ? "ON" : "OFF"}`;
   };
 }
 
@@ -105,18 +119,53 @@ function sendLoop() {
   }, SEND_INTERVAL_MS);
 }
 
-function addCaptionLogEntry(caption) {
+function addChatEntry(role, text) {
   const li = document.createElement("li");
+  li.className = role === "user" ? "msg-user" : "msg-assistant";
+  const time = document.createElement("time");
+  time.textContent = new Date().toLocaleTimeString();
+  const label = document.createElement("span");
+  label.className = "msg-label";
+  label.textContent = role === "user" ? "🗣️ You" : "🤖 Assistant";
+  const body = document.createElement("p");
+  body.textContent = text;
+  li.appendChild(time);
+  li.appendChild(label);
+  li.appendChild(body);
+  chatLog.prepend(li);
+}
+
+function setVoiceStatus(text, cls) {
+  voiceStatus.textContent = text;
+  voiceStatus.className = `voice-status ${cls}`;
+}
+
+// ---- Debug: live transcript of what the browser's speech recognizer hears ----
+function applyDebugVisibility() {
+  debugPanel.style.display = debugToggle.checked ? "block" : "none";
+}
+debugToggle.addEventListener("change", applyDebugVisibility);
+applyDebugVisibility();
+
+function setInterimTranscript(text) {
+  interimTranscriptEl.textContent = text || "(nothing yet)";
+}
+
+function logFinalTranscript(text, heardWake) {
+  setInterimTranscript("");
+  const li = document.createElement("li");
+  li.className = heardWake ? "heard-wake" : "";
   const time = document.createElement("time");
   time.textContent = new Date().toLocaleTimeString();
   li.appendChild(time);
-  li.appendChild(document.createTextNode(caption));
-  captionLog.prepend(li);
+  li.appendChild(document.createTextNode(` "${text}"${heardWake ? " — wake phrase detected" : ""}`));
+  transcriptLog.prepend(li);
 }
 
-async function describeScene() {
-  describeBtn.disabled = true;
-  describeBtn.textContent = "Thinking…";
+// ---- Voice Q&A (shared by wake-word and the manual text fallback) ----
+async function askAboutScene(question) {
+  addChatEntry("user", question);
+  setVoiceStatus("🧠 Thinking…", "thinking");
   try {
     const ctx = capture.getContext("2d");
     ctx.drawImage(video, 0, 0, CAPTURE_W, CAPTURE_H);
@@ -124,20 +173,108 @@ async function describeScene() {
     const res = await fetch("/api/describe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_data_url }),
+      body: JSON.stringify({ image_data_url, question }),
     });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
     const { caption } = await res.json();
-    addCaptionLogEntry(caption);
-    speechSynthesis.speak(new SpeechSynthesisUtterance(caption));
+    addChatEntry("assistant", caption);
+    setVoiceStatus("🔊 Speaking…", "speaking");
+    await speak(caption);
   } catch (err) {
-    addCaptionLogEntry(`(error: ${err.message})`);
+    addChatEntry("assistant", `(error: ${err.message})`);
   } finally {
-    describeBtn.disabled = false;
-    describeBtn.textContent = "🔊 Describe Scene";
+    setVoiceStatus('👂 Listening for "Hey Assistant"…', "idle");
+    resumeRecognition();
   }
 }
-describeBtn.addEventListener("click", describeScene);
+
+function speak(text) {
+  return new Promise((resolve) => {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.onend = resolve;
+    utter.onerror = resolve;
+    speechSynthesis.speak(utter);
+  });
+}
+
+// ---- Manual fallback (demo safety net if voice recognition is flaky) ----
+fallbackForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = fallbackInput.value.trim();
+  if (!q) return;
+  fallbackInput.value = "";
+  askAboutScene(q);
+});
+
+// ---- Wake-word always-listening voice loop ----
+const SpeechRecognitionImpl = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let busy = false; // true while thinking/speaking — ignore wake phrase, recognition is paused anyway
+
+function resumeRecognition() {
+  busy = false;
+  if (recognition) {
+    try { recognition.start(); } catch (_e) { /* already started */ }
+  }
+}
+
+function setupVoice() {
+  if (!SpeechRecognitionImpl) {
+    setVoiceStatus("⌨️ Voice not supported in this browser — use the text box below", "unsupported");
+    return;
+  }
+  recognition = new SpeechRecognitionImpl();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = "en-US";
+
+  recognition.onresult = (event) => {
+    // Debug transcript: show interim words live, log every final utterance,
+    // independent of whether it matched the wake phrase — this runs even if
+    // we're about to ignore the result below, so you can see exactly what
+    // the recognizer heard (useful for tuning WAKE_PHRASE).
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const r = event.results[i];
+      if (r.isFinal) {
+        const text = r[0].transcript.trim();
+        logFinalTranscript(text, text.toLowerCase().includes(WAKE_PHRASE));
+      } else {
+        interim += r[0].transcript;
+      }
+    }
+    if (interim) setInterimTranscript(interim);
+
+    if (busy) return;
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const result = event.results[i];
+      if (!result.isFinal) continue;
+      const transcript = result[0].transcript.trim().toLowerCase();
+      const idx = transcript.indexOf(WAKE_PHRASE);
+      if (idx === -1) continue;
+
+      let question = transcript.slice(idx + WAKE_PHRASE.length).trim();
+      if (!question) question = "Describe what you see.";
+
+      busy = true;
+      recognition.stop(); // avoid the spoken answer re-triggering the mic
+      askAboutScene(question);
+      break;
+    }
+  };
+
+  recognition.onend = () => {
+    if (!busy) {
+      try { recognition.start(); } catch (_e) { /* ignore */ }
+    }
+  };
+  recognition.onerror = (e) => {
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    setVoiceStatus(`⚠️ voice error: ${e.error} — retrying…`, "idle");
+  };
+
+  recognition.start();
+}
 
 (async function init() {
   try {
@@ -148,4 +285,5 @@ describeBtn.addEventListener("click", describeScene);
   }
   connectWS();
   sendLoop();
+  setupVoice();
 })();

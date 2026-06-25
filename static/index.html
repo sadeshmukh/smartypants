@@ -7,8 +7,8 @@
 </head>
 <body>
   <header>
-    <h1>👁️ Scene Description Assistant</h1>
-    <p class="sub">Live YOLOv8 + TensorRT detection on a Jetson Orin Nano, plus on-demand AI scene captions.</p>
+    <h1>👁️ Voice Vision Assistant</h1>
+    <p class="sub">Say "Hey Assistant" and ask a question about what the camera sees — answered live on a Jetson Orin Nano.</p>
   </header>
 
   <main>
@@ -19,34 +19,64 @@
       </div>
       <canvas id="capture" class="hidden"></canvas>
 
-      <div class="controls">
-        <label class="toggle">
-          <input type="checkbox" id="trtToggle" checked />
-          TensorRT acceleration
+      <div class="voice-bar">
+        <span id="voiceStatus" class="voice-status idle">👂 Listening for "Hey Assistant"…</span>
+        <label class="toggle debug-toggle">
+          <input type="checkbox" id="debugToggle" checked />
+          🐛 Show live transcript
         </label>
-        <button id="describeBtn">🔊 Describe Scene</button>
-        <span id="connStatus" class="status">connecting…</span>
       </div>
+
+      <div id="debugPanel" class="debug-panel">
+        <div class="debug-interim">Hearing: <span id="interimTranscript">(nothing yet)</span></div>
+        <ul id="transcriptLog" class="transcript-log"></ul>
+      </div>
+
+      <form id="fallbackForm" class="fallback-form">
+        <input id="fallbackInput" type="text" placeholder="Or type a question (voice not working?)" autocomplete="off" />
+        <button type="submit">Ask</button>
+      </form>
+
+      <details class="engineering">
+        <summary>⚙️ Engineering stats</summary>
+        <div class="eng-body">
+          <label class="toggle">
+            <input type="checkbox" id="trtToggle" checked />
+            TensorRT acceleration
+          </label>
+          <span id="connStatus" class="status">connecting…</span>
+          <div class="stat-row">
+            <div class="stat-card">
+              <div class="stat-label">Inference (GPU)</div>
+              <div id="inferenceMs" class="stat-value">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Detector FPS</div>
+              <div id="fps" class="stat-value">—</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Mode</div>
+              <div id="modeBadge" class="stat-value">TensorRT: ON</div>
+            </div>
+          </div>
+        </div>
+      </details>
     </section>
 
     <section class="stats-pane">
-      <div class="stat-card">
-        <div class="stat-label">Inference (GPU)</div>
-        <div id="inferenceMs" class="stat-value">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Detector FPS</div>
-        <div id="fps" class="stat-value">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Mode</div>
-        <div id="modeBadge" class="stat-value">TensorRT: ON</div>
-      </div>
-
-      <h2>Scene log</h2>
-      <ul id="captionLog" class="caption-log"></ul>
+      <h2>Conversation</h2>
+      <ul id="chatLog" class="chat-log"></ul>
     </section>
   </main>
+
+  <div id="kickOverlay" class="kick-overlay hidden">
+    <div class="kick-card">
+      <div class="kick-icon">🔌</div>
+      <h2>Session Ended</h2>
+      <p>This session was closed by the host.</p>
+      <button onclick="location.reload()">Reconnect</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

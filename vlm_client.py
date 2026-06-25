@@ -9,6 +9,14 @@ LLAMA_URL = "http://localhost:8080/v1/chat/completions"
 DEFAULT_PROMPT = "Describe this scene in one short sentence for a visually impaired listener."
 
 
+def build_qa_prompt(question: str) -> str:
+    return (
+        "You are a visual assistant for a blind or low-vision user. Answer this "
+        f"question about what the camera currently sees, in one or two short spoken "
+        f"sentences: {question}"
+    )
+
+
 async def describe_image(image_data_url: str, prompt: str = DEFAULT_PROMPT, max_tokens: int = 128) -> str:
     payload = {
         "model": "local",

@@ -1,3 +1,4 @@
 *.pem
 __pycache__
 README.runbook.md
+*.log

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>Admin — Vision Assistant</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #0b0f14;
+  color: #e6edf3;
+  padding: 28px 32px;
+}
+h1 { margin: 0 0 4px; font-size: 20px; }
+.sub { color: #8b949e; font-size: 13px; margin: 0 0 24px; }
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.pill {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 14px;
+}
+.pill strong { color: #58a6ff; }
+
+.live-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #39d353;
+  display: inline-block;
+  animation: pulse 2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+button { cursor: pointer; border: none; border-radius: 8px; font-weight: 600; }
+.btn-danger {
+  background: #da3633;
+  color: #fff;
+  padding: 7px 14px;
+  font-size: 13px;
+}
+.btn-danger:hover { background: #f85149; }
+.btn-danger:disabled { background: #2a1414; color: #8b949e; cursor: default; }
+
+.card {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+table { width: 100%; border-collapse: collapse; }
+thead tr { border-bottom: 1px solid #30363d; }
+th {
+  text-align: left;
+  font-size: 11px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 10px 16px;
+}
+td { padding: 11px 16px; font-size: 14px; border-bottom: 1px solid #21262d; }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #1c2128; }
+
+.mono { font-family: monospace; font-size: 12px; color: #8b949e; }
+.empty-row td { color: #8b949e; text-align: center; padding: 48px 16px; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>🛠 Vision Assistant — Admin</h1>
+<p class="sub">Manage connected viewer sessions. Refreshes every 2 seconds.</p>
+
+<div class="top-bar">
+  <div class="pill">Sessions: <strong id="clientCount">—</strong></div>
+  <button class="btn-danger" id="kickAllBtn" onclick="kickAll()" disabled>Disconnect All</button>
+  <span class="live-dot" title="Live"></span>
+</div>
+
+<div class="card">
+  <table>
+    <thead>
+      <tr>
+        <th>Client ID</th>
+        <th>IP</th>
+        <th>Connected</th>
+        <th>Frames</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+function fmtDuration(s) {
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+async function refresh() {
+  let clients;
+  try {
+    const res = await fetch("/api/admin/clients");
+    clients = await res.json();
+  } catch {
+    return;
+  }
+
+  document.getElementById("clientCount").textContent = clients.length;
+  document.getElementById("kickAllBtn").disabled = clients.length === 0;
+
+  const tbody = document.getElementById("tbody");
+  if (clients.length === 0) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No clients connected</td></tr>';
+    return;
+  }
+  tbody.innerHTML = clients.map(c => `
+    <tr>
+      <td class="mono">${c.id.slice(-12)}</td>
+      <td>${c.ip}</td>
+      <td>${fmtDuration(c.connected_seconds)}</td>
+      <td>${c.frame_count.toLocaleString()}</td>
+      <td><button class="btn-danger" onclick="kickOne('${c.id}')">Disconnect</button></td>
+    </tr>
+  `).join("");
+}
+
+async function kickOne(id) {
+  await fetch(`/api/admin/clients/${encodeURIComponent(id)}`, { method: "DELETE" });
+  refresh();
+}
+
+async function kickAll() {
+  document.getElementById("kickAllBtn").disabled = true;
+  await fetch("/api/admin/clients", { method: "DELETE" });
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>
