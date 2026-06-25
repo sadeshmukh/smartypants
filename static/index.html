@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <title>Vision Assistant — Jetson Orin Nano</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -13,7 +16,7 @@
 
   <main>
     <section class="video-pane">
-      <div class="video-wrap">
+      <div id="videoWrap" class="video-wrap state-idle">
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay"></canvas>
       </div>
@@ -37,14 +40,29 @@
         <button type="submit">Ask</button>
       </form>
 
-      <details class="engineering">
+      <details class="engineering" open>
         <summary>⚙️ Engineering stats</summary>
         <div class="eng-body">
-          <label class="toggle">
-            <input type="checkbox" id="trtToggle" checked />
-            TensorRT acceleration
-          </label>
-          <span id="connStatus" class="status">connecting…</span>
+          <div class="eng-controls">
+            <label class="toggle">
+              <input type="checkbox" id="trtToggle" checked />
+              TensorRT acceleration
+            </label>
+            <span id="connStatus" class="status">connecting…</span>
+          </div>
+
+          <!-- Real-Time Sparkline latency tracking -->
+          <div class="sparkline-container">
+            <div class="sparkline-header">
+              <span>📊 Real-Time Latency (ms)</span>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot yolo"></span>GPU Inference</span>
+                <span class="legend-item"><span class="legend-dot total"></span>Total RTT</span>
+              </div>
+            </div>
+            <canvas id="sparklineCanvas" width="450" height="90"></canvas>
+          </div>
+
           <div class="stat-row">
             <div class="stat-card">
               <div class="stat-label">Inference (GPU)</div>

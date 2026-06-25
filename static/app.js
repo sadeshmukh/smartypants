@@ -14,6 +14,8 @@ const debugToggle = document.getElementById("debugToggle");
 const debugPanel = document.getElementById("debugPanel");
 const interimTranscriptEl = document.getElementById("interimTranscript");
 const transcriptLog = document.getElementById("transcriptLog");
+const videoWrap = document.getElementById("videoWrap");
+const sparklineCanvas = document.getElementById("sparklineCanvas");
 
 const SEND_INTERVAL_MS = 120; // ~8 fps capture, deliberately below the WS round-trip budget
 const CAPTURE_W = 640;
@@ -25,12 +27,25 @@ capture.height = CAPTURE_H;
 
 let ws = null;
 let inFlight = false;
+let lastSendTime = 0;
+
+// Sparkline telemetry arrays
+const inferenceHistory = [];
+const rttHistory = [];
+const MAX_HISTORY_LEN = 40;
 
 function showKickOverlay() {
   document.getElementById("kickOverlay").classList.remove("hidden");
   if (recognition) { try { recognition.stop(); } catch (_) {} }
   speechSynthesis.cancel();
   setVoiceStatus("Session ended by host", "unsupported");
+  updateGlow("idle");
+}
+
+function updateGlow(state) {
+  if (videoWrap) {
+    videoWrap.className = `video-wrap state-${state}`;
+  }
 }
 
 async function startCamera() {
@@ -66,12 +81,24 @@ function connectWS() {
 
   ws.onmessage = (ev) => {
     inFlight = false;
+    const clientRtt = Date.now() - lastSendTime;
     const msg = JSON.parse(ev.data);
     if (msg.type === "admin_disconnect") { showKickOverlay(); return; }
     drawOverlay(msg);
     inferenceMsEl.textContent = `${msg.inference_ms.toFixed(1)} ms`;
     fpsEl.textContent = msg.fps.toFixed(1);
     modeBadge.textContent = `TensorRT: ${msg.tensorrt ? "ON" : "OFF"}`;
+
+    // Add values to history
+    inferenceHistory.push(msg.inference_ms);
+    rttHistory.push(clientRtt);
+    if (inferenceHistory.length > MAX_HISTORY_LEN) inferenceHistory.shift();
+    if (rttHistory.length > MAX_HISTORY_LEN) rttHistory.shift();
+    drawSparkline();
+
+    if (!busy) {
+      updateGlow("yolo");
+    }
   };
 }
 
@@ -87,18 +114,53 @@ function drawOverlay(result) {
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   const scaleX = overlay.width / result.frame_w;
   const scaleY = overlay.height / result.frame_h;
-  ctx.lineWidth = 2;
-  ctx.font = "14px system-ui";
+  ctx.lineWidth = 2.5;
+  ctx.font = "bold 13px 'Outfit', sans-serif";
+
   result.boxes.forEach((box, i) => {
     const [x1, y1, x2, y2] = box;
-    const label = `${result.labels[i]} ${(result.scores[i] * 100).toFixed(0)}%`;
-    ctx.strokeStyle = "#39d353";
-    ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
-    const textW = ctx.measureText(label).width + 6;
-    ctx.fillStyle = "#39d353";
-    ctx.fillRect(x1 * scaleX, y1 * scaleY - 18, textW, 18);
-    ctx.fillStyle = "#0b0f14";
-    ctx.fillText(label, x1 * scaleX + 3, y1 * scaleY - 4);
+    const px1 = x1 * scaleX;
+    const py1 = y1 * scaleY;
+    const pw = (x2 - x1) * scaleX;
+    const ph = (y2 - y1) * scaleY;
+    const label = `${result.labels[i].toUpperCase()} ${(result.scores[i] * 100).toFixed(0)}%`;
+    
+    const hue = (i * 75) % 360;
+    const strokeColor = `hsla(${hue}, 85%, 60%, 1)`;
+    const fillColor = `hsla(${hue}, 85%, 60%, 0.12)`;
+    const badgeColor = `hsla(${hue}, 85%, 55%, 1)`;
+
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(px1, py1, pw, ph);
+
+    ctx.strokeStyle = strokeColor;
+    ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(px1, py1, pw, ph, 4);
+    } else {
+      ctx.rect(px1, py1, pw, ph);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    const textW = ctx.measureText(label).width + 10;
+    ctx.fillStyle = badgeColor;
+    
+    let badgeY = py1 - 22;
+    if (badgeY < 0) badgeY = py1 + 2;
+
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(px1, badgeY, textW, 20, 3);
+    } else {
+      ctx.rect(px1, badgeY, textW, 20);
+    }
+    ctx.fill();
+
+    ctx.fillStyle = "#000000";
+    ctx.fillText(label, px1 + 5, badgeY + 14);
   });
 }
 
@@ -111,12 +173,72 @@ function sendLoop() {
       if (!blob) return;
       blob.arrayBuffer().then((buf) => {
         if (ws.readyState === WebSocket.OPEN) {
+          lastSendTime = Date.now();
           ws.send(buf);
           inFlight = true;
         }
       });
     }, "image/jpeg", 0.6);
   }, SEND_INTERVAL_MS);
+}
+
+function drawSparkline() {
+  if (!sparklineCanvas) return;
+  const ctx = sparklineCanvas.getContext("2d");
+  const w = sparklineCanvas.width;
+  const h = sparklineCanvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  // Draw background grid lines
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.lineWidth = 1;
+  for (let y = 10; y < h; y += 20) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  const maxVal = Math.max(
+    ...inferenceHistory,
+    ...rttHistory,
+    80 // min scale range 80ms
+  ) * 1.15;
+
+  function drawLine(data, color, fillGrad) {
+    if (data.length < 2) return;
+    ctx.beginPath();
+    const step = w / (MAX_HISTORY_LEN - 1);
+    
+    for (let i = 0; i < data.length; i++) {
+      const x = i * step;
+      const y = h - (data[i] / maxVal) * (h - 10) - 5;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Fill underneath
+    ctx.lineTo((data.length - 1) * step, h);
+    ctx.lineTo(0, h);
+    ctx.fillStyle = fillGrad;
+    ctx.fill();
+  }
+
+  // Create gradients
+  const yoloGrad = ctx.createLinearGradient(0, 0, 0, h);
+  yoloGrad.addColorStop(0, "rgba(57, 211, 83, 0.15)");
+  yoloGrad.addColorStop(1, "rgba(57, 211, 83, 0)");
+
+  const rttGrad = ctx.createLinearGradient(0, 0, 0, h);
+  rttGrad.addColorStop(0, "rgba(88, 166, 255, 0.15)");
+  rttGrad.addColorStop(1, "rgba(88, 166, 255, 0)");
+
+  drawLine(rttHistory, "#58a6ff", rttGrad);
+  drawLine(inferenceHistory, "#39d353", yoloGrad);
 }
 
 function addChatEntry(role, text) {
@@ -166,6 +288,7 @@ function logFinalTranscript(text, heardWake) {
 async function askAboutScene(question) {
   addChatEntry("user", question);
   setVoiceStatus("🧠 Thinking…", "thinking");
+  updateGlow("thinking");
   try {
     const res = await fetch("/api/describe", {
       method: "POST",
@@ -176,11 +299,13 @@ async function askAboutScene(question) {
     const { caption } = await res.json();
     addChatEntry("assistant", caption);
     setVoiceStatus("🔊 Speaking…", "speaking");
+    updateGlow("speaking");
     await speak(caption);
   } catch (err) {
     addChatEntry("assistant", `(error: ${err.message})`);
   } finally {
     setVoiceStatus('👂 Listening for "Hey Assistant"…', "idle");
+    updateGlow("yolo");
     resumeRecognition();
   }
 }
