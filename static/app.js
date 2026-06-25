@@ -17,6 +17,19 @@ const transcriptLog = document.getElementById("transcriptLog");
 const videoWrap = document.getElementById("videoWrap");
 const sparklineCanvas = document.getElementById("sparklineCanvas");
 
+// New DOM Elements for presets, narrator, voice setting and telemetry
+const narrateToggle = document.getElementById("narrateToggle");
+const voiceSelect = document.getElementById("voiceSelect");
+const rateRange = document.getElementById("rateRange");
+const pitchRange = document.getElementById("pitchRange");
+const rateVal = document.getElementById("rateVal");
+const pitchVal = document.getElementById("pitchVal");
+
+const statCpu = document.getElementById("statCpu");
+const statGpu = document.getElementById("statGpu");
+const statTemp = document.getElementById("statTemp");
+const statMem = document.getElementById("statMem");
+
 const SEND_INTERVAL_MS = 120; // ~8 fps capture, deliberately below the WS round-trip budget
 const CAPTURE_W = 640;
 const CAPTURE_H = 480;
@@ -28,6 +41,11 @@ capture.height = CAPTURE_H;
 let ws = null;
 let inFlight = false;
 let lastSendTime = 0;
+
+// Speech synthesis settings
+let selectedVoice = null;
+let ttsRate = 1.0;
+let ttsPitch = 1.0;
 
 // Sparkline telemetry arrays
 const inferenceHistory = [];
@@ -241,7 +259,7 @@ function drawSparkline() {
   drawLine(inferenceHistory, "#39d353", yoloGrad);
 }
 
-function addChatEntry(role, text) {
+function addChatEntry(role, text, imageSrc = null) {
   const li = document.createElement("li");
   li.className = role === "user" ? "msg-user" : "msg-assistant";
   const time = document.createElement("time");
@@ -254,6 +272,28 @@ function addChatEntry(role, text) {
   li.appendChild(time);
   li.appendChild(label);
   li.appendChild(body);
+
+  if (imageSrc) {
+    const img = document.createElement("img");
+    img.src = imageSrc;
+    img.className = "chat-img-thumb";
+    img.title = "View snapshot";
+    img.addEventListener("click", () => {
+      const w = window.open();
+      if (w) {
+        w.document.write(`
+          <html>
+            <head><title>Camera Snapshot</title></head>
+            <body style="margin:0; background:#0b0f14; display:flex; align-items:center; justify-content:center; height:100vh;">
+              <img src="${imageSrc}" style="max-width:100%; max-height:100%; border-radius:8px; box-shadow:0 8px 30px rgba(0,0,0,0.5);" />
+            </body>
+          </html>
+        `);
+      }
+    });
+    li.appendChild(img);
+  }
+
   chatLog.prepend(li);
 }
 
@@ -286,7 +326,14 @@ function logFinalTranscript(text, heardWake) {
 
 // ---- Voice Q&A (shared by wake-word and the manual text fallback) ----
 async function askAboutScene(question) {
-  addChatEntry("user", question);
+  let snapshotUrl = null;
+  try {
+    const ctx = capture.getContext("2d");
+    ctx.drawImage(video, 0, 0, CAPTURE_W, CAPTURE_H);
+    snapshotUrl = capture.toDataURL("image/jpeg");
+  } catch (_) {}
+
+  addChatEntry("user", question, snapshotUrl);
   setVoiceStatus("🧠 Thinking…", "thinking");
   updateGlow("thinking");
   try {
@@ -313,6 +360,9 @@ async function askAboutScene(question) {
 function speak(text) {
   return new Promise((resolve) => {
     const utter = new SpeechSynthesisUtterance(text);
+    if (selectedVoice) utter.voice = selectedVoice;
+    utter.rate = ttsRate;
+    utter.pitch = ttsPitch;
     utter.onend = resolve;
     utter.onerror = resolve;
     speechSynthesis.speak(utter);
@@ -351,10 +401,6 @@ function setupVoice() {
   recognition.lang = "en-US";
 
   recognition.onresult = (event) => {
-    // Debug transcript: show interim words live, log every final utterance,
-    // independent of whether it matched the wake phrase — this runs even if
-    // we're about to ignore the result below, so you can see exactly what
-    // the recognizer heard (useful for tuning WAKE_PHRASE).
     let interim = "";
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const r = event.results[i];
@@ -398,6 +444,83 @@ function setupVoice() {
   recognition.start();
 }
 
+// ---- Telemetry & Stats fetching loop ----
+function startStatsLoop() {
+  setInterval(async () => {
+    try {
+      const res = await fetch("/api/system/stats");
+      if (!res.ok) return;
+      const stats = await res.json();
+      if (statCpu) statCpu.textContent = `${stats.cpu.toFixed(1)}%`;
+      if (statGpu) statGpu.textContent = `${stats.gpu.toFixed(1)}%`;
+      if (statTemp) statTemp.textContent = `${stats.temp.toFixed(1)}°C`;
+      if (statMem) statMem.textContent = `${stats.mem.toFixed(1)}%`;
+    } catch (_) {}
+  }, 2000);
+}
+
+// ---- Presets & Continuous narrative logic ----
+function setupPresetsAndNarrator() {
+  document.querySelectorAll(".preset-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const q = btn.getAttribute("data-q");
+      if (q && !busy) {
+        askAboutScene(q);
+      }
+    });
+  });
+
+  // Continuous Narrator timer
+  setInterval(() => {
+    if (narrateToggle && narrateToggle.checked && !busy) {
+      askAboutScene("Describe what you see.");
+    }
+  }, 10000);
+}
+
+// ---- Speech settings controls ----
+function populateVoiceList() {
+  if (typeof speechSynthesis === 'undefined') return;
+  const voices = speechSynthesis.getVoices();
+  if (voiceSelect) {
+    const prevVal = voiceSelect.value;
+    voiceSelect.innerHTML = '<option value="">Default Voice</option>';
+    voices.forEach((v) => {
+      const option = document.createElement("option");
+      option.textContent = `${v.name} (${v.lang})`;
+      option.value = v.voiceURI;
+      voiceSelect.appendChild(option);
+    });
+    if (prevVal) voiceSelect.value = prevVal;
+  }
+}
+
+function setupSpeechControls() {
+  populateVoiceList();
+  if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = populateVoiceList;
+  }
+
+  if (voiceSelect) {
+    voiceSelect.addEventListener("change", () => {
+      const voices = speechSynthesis.getVoices();
+      selectedVoice = voices.find(v => v.voiceURI === voiceSelect.value) || null;
+    });
+  }
+  if (rateRange) {
+    rateRange.addEventListener("input", () => {
+      ttsRate = parseFloat(rateRange.value);
+      if (rateVal) rateVal.textContent = ttsRate.toFixed(1);
+    });
+  }
+  if (pitchRange) {
+    pitchRange.addEventListener("input", () => {
+      ttsPitch = parseFloat(pitchRange.value);
+      if (pitchVal) pitchVal.textContent = ttsPitch.toFixed(1);
+    });
+  }
+}
+
 (async function init() {
   try {
     await startCamera();
@@ -408,4 +531,9 @@ function setupVoice() {
   connectWS();
   sendLoop();
   setupVoice();
+  
+  // Set up new telemetry stats, VLM presets, narrator loops, and TTS controls
+  startStatsLoop();
+  setupPresetsAndNarrator();
+  setupSpeechControls();
 })();

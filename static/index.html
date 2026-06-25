@@ -35,6 +35,22 @@
         <ul id="transcriptLog" class="transcript-log"></ul>
       </div>
 
+      <!-- Quick Presets -->
+      <div class="preset-container">
+        <button type="button" class="preset-btn" data-q="Describe what you see.">🔍 Describe Scene</button>
+        <button type="button" class="preset-btn" data-q="What objects are in front of the camera?">📦 List Objects</button>
+        <button type="button" class="preset-btn" data-q="Are there any hazards or danger in this scene?">⚠️ Hazards?</button>
+        <button type="button" class="preset-btn" data-q="Read any text visible in the frame.">📝 Read Text</button>
+      </div>
+
+      <!-- Narrator and fallback -->
+      <div class="narrator-bar">
+        <label class="toggle">
+          <input type="checkbox" id="narrateToggle" />
+          🔄 Continuous Narrator (automatic updates every 10s)
+        </label>
+      </div>
+
       <form id="fallbackForm" class="fallback-form">
         <input id="fallbackInput" type="text" placeholder="Or type a question (voice not working?)" autocomplete="off" />
         <button type="submit">Ask</button>
@@ -75,6 +91,48 @@
             <div class="stat-card">
               <div class="stat-label">Mode</div>
               <div id="modeBadge" class="stat-value">TensorRT: ON</div>
+            </div>
+          </div>
+
+          <!-- Hardware Metrics section -->
+          <div class="hardware-telemetry">
+            <h4 class="section-title">⚡ Jetson Orin Hardware Metrics</h4>
+            <div class="stat-row">
+              <div class="stat-card">
+                <div class="stat-label">CPU Usage</div>
+                <div id="statCpu" class="stat-value">— %</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">GPU Load</div>
+                <div id="statGpu" class="stat-value">— %</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">SoC Temp</div>
+                <div id="statTemp" class="stat-value">— °C</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Memory</div>
+                <div id="statMem" class="stat-value">— %</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TTS Voice Controls -->
+          <div class="voice-settings-panel">
+            <h4 class="section-title">🗣️ Speech Synthesizer Settings</h4>
+            <div class="voice-settings-row">
+              <label for="voiceSelect">Voice Voice:</label>
+              <select id="voiceSelect" class="voice-select"><option value="">Default Voice</option></select>
+            </div>
+            <div class="voice-settings-grid">
+              <div class="slider-group">
+                <label for="rateRange">Speed: <span id="rateVal">1.0</span>x</label>
+                <input type="range" id="rateRange" min="0.5" max="2.0" step="0.1" value="1.0" />
+              </div>
+              <div class="slider-group">
+                <label for="pitchRange">Pitch: <span id="pitchVal">1.0</span></label>
+                <input type="range" id="pitchRange" min="0.5" max="2.0" step="0.1" value="1.0" />
+              </div>
             </div>
           </div>
         </div>

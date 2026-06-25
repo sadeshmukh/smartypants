@@ -599,3 +599,108 @@ main {
 .kick-card button:hover {
   background: #2ea043;
 }
+
+/* Preset Prompt Buttons */
+.preset-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.preset-btn {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.preset-btn:hover {
+  background: rgba(88, 166, 255, 0.1);
+  border-color: rgba(88, 166, 255, 0.4);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+}
+.preset-btn:active {
+  transform: translateY(1px);
+}
+
+/* Narrator and telemetry titles */
+.narrator-bar {
+  margin-top: 12px;
+}
+.section-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  margin: 18px 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding-bottom: 4px;
+}
+
+/* TTS Voice Customization Panel */
+.voice-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.voice-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.voice-select {
+  flex: 1;
+  background: rgba(8, 12, 16, 0.6);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.voice-select:focus {
+  border-color: var(--accent-blue);
+}
+.voice-settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.slider-group input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-blue);
+  cursor: pointer;
+}
+
+/* Chat Log Thumbnails */
+.chat-img-thumb {
+  max-width: 120px;
+  max-height: 90px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  margin-top: 8px;
+  display: block;
+  cursor: zoom-in;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.chat-img-thumb:hover {
+  transform: scale(1.12);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  border-color: var(--border-hover);
+}
