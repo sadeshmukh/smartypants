@@ -1,10 +1,11 @@
 """FastAPI backend for the live scene-description assistant.
 
 Fast path:  WS /ws/detect      -> continuous YOLOv8 detection (TensorRT on/off toggle)
-Slow path:  POST /api/describe -> on-demand VLM caption via local llama-server
+Slow path:  POST /api/describe -> on-demand VLM Q&A via tool-call loop (server-side frame)
 Admin:      /admin             -> session management dashboard
 """
 import asyncio
+import base64
 import json
 import time
 import uuid
@@ -17,12 +18,21 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import detector_manager
-from vlm_client import describe_image, build_qa_prompt, DEFAULT_PROMPT
+from vlm_client import ask_with_camera_tool
 
 app = FastAPI(title="Vision Assistant")
 
 # client_id -> {ws, ip, connected_at, frame_count}
 connected_clients: dict[str, dict] = {}
+
+# Latest raw JPEG from any connected WS client — used by the VLM tool call
+latest_frame_jpeg: bytes | None = None
+
+
+def get_latest_frame_b64() -> str | None:
+    if latest_frame_jpeg is None:
+        return None
+    return base64.b64encode(latest_frame_jpeg).decode()
 
 
 @app.middleware("http")
@@ -69,6 +79,9 @@ async def ws_detect(ws: WebSocket):
             if frame is None:
                 continue
 
+            global latest_frame_jpeg
+            latest_frame_jpeg = jpeg_bytes
+
             t0 = time.time()
             results = await asyncio.to_thread(detector_manager.detect, frame, use_tensorrt)
             rtt_ms = (time.time() - t0) * 1000
@@ -94,15 +107,12 @@ async def ws_detect(ws: WebSocket):
 
 
 class DescribeRequest(BaseModel):
-    image_data_url: str
-    question: str | None = None
-    prompt: str = DEFAULT_PROMPT
+    question: str = "Describe what you see."
 
 
 @app.post("/api/describe")
 async def api_describe(req: DescribeRequest):
-    prompt = build_qa_prompt(req.question) if req.question else req.prompt
-    caption = await describe_image(req.image_data_url, prompt)
+    caption = await ask_with_camera_tool(req.question, get_latest_frame_b64)
     return {"caption": caption}
 
 

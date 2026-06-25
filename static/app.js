@@ -167,13 +167,10 @@ async function askAboutScene(question) {
   addChatEntry("user", question);
   setVoiceStatus("🧠 Thinking…", "thinking");
   try {
-    const ctx = capture.getContext("2d");
-    ctx.drawImage(video, 0, 0, CAPTURE_W, CAPTURE_H);
-    const image_data_url = capture.toDataURL("image/jpeg", 0.8);
     const res = await fetch("/api/describe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_data_url, question }),
+      body: JSON.stringify({ question }),
     });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
     const { caption } = await res.json();

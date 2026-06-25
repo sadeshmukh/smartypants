@@ -1,6 +1,8 @@
-"""Sends an image+prompt to the locally-served vision-language model (llama-server).
+"""VLM client: sends questions to llama-server using a tool-call loop.
 
-Payload shape confirmed against /Developer/edgeAI/jetson/jetson-llm/vision_test.py.
+The model is given a look_at_camera tool and forced to call it before answering.
+The server resolves the tool call by returning the latest cached frame, so the
+browser never needs to send image data.
 """
 import httpx
 
@@ -8,32 +10,80 @@ LLAMA_URL = "http://localhost:8080/v1/chat/completions"
 
 DEFAULT_PROMPT = "Describe this scene in one short sentence for a visually impaired listener."
 
+_LOOK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "look_at_camera",
+        "description": (
+            "Capture the current camera view. Always call this before answering "
+            "any question about what the camera sees."
+        ),
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}
+
 
 def build_qa_prompt(question: str) -> str:
     return (
-        "You are a visual assistant for a blind or low-vision user. Answer this "
-        f"question about what the camera currently sees, in one or two short spoken "
-        f"sentences: {question}"
+        "You are a visual assistant for a blind or low-vision user. "
+        "Use the look_at_camera tool to see the scene, then answer this question "
+        f"in one or two short spoken sentences: {question}"
     )
 
 
-async def describe_image(image_data_url: str, prompt: str = DEFAULT_PROMPT, max_tokens: int = 128) -> str:
-    payload = {
-        "model": "local",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_data_url}},
-                ],
-            }
-        ],
-        "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
-    }
+async def ask_with_camera_tool(question: str, get_frame_b64, max_tokens: int = 128) -> str:
+    prompt = build_qa_prompt(question)
+    messages = [{"role": "user", "content": prompt}]
+
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(LLAMA_URL, json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+        # Turn 1: force the model to call look_at_camera
+        r1 = await client.post(LLAMA_URL, json={
+            "model": "local",
+            "messages": messages,
+            "tools": [_LOOK_TOOL],
+            "tool_choice": {"type": "function", "function": {"name": "look_at_camera"}},
+            "max_tokens": 16,
+            "chat_template_kwargs": {"enable_thinking": False},
+        })
+        r1.raise_for_status()
+
+        assistant_msg = r1.json()["choices"][0]["message"]
+        tool_calls = assistant_msg.get("tool_calls") or []
+
+        frame_b64 = get_frame_b64()
+
+        if not tool_calls or not frame_b64:
+            # Fallback: model didn't call the tool or no frame cached — inject image directly
+            if frame_b64:
+                r_fb = await client.post(LLAMA_URL, json={
+                    "model": "local",
+                    "messages": [{"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{frame_b64}"}},
+                    ]}],
+                    "max_tokens": max_tokens,
+                    "chat_template_kwargs": {"enable_thinking": False},
+                })
+                r_fb.raise_for_status()
+                return r_fb.json()["choices"][0]["message"]["content"].strip()
+            return assistant_msg.get("content") or "No camera frame available yet."
+
+        # Turn 2: resolve the tool call with the captured frame
+        tool_call = tool_calls[0]
+        messages.append({"role": "assistant", "tool_calls": tool_calls})
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call["id"],
+            "content": [{"type": "image_url", "image_url": {
+                "url": f"data:image/jpeg;base64,{frame_b64}"
+            }}],
+        })
+
+        r2 = await client.post(LLAMA_URL, json={
+            "model": "local",
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "chat_template_kwargs": {"enable_thinking": False},
+        })
+        r2.raise_for_status()
+        return r2.json()["choices"][0]["message"]["content"].strip()
