@@ -160,18 +160,32 @@
     <!-- COLUMN 2: Telemetry, Hardware & Ledger -->
     <section class="panel-section stats-column">
       <div class="panel-card telemetry-card">
-        <div class="card-header">
+        <div class="card-header collapsible-header" role="button" tabindex="0" aria-expanded="true" aria-controls="graphsBody">
           <h2 class="card-title">Performance Telemetry</h2>
+          <span class="collapse-chevron" aria-hidden="true">▾</span>
         </div>
-        <div class="sparkline-container">
-          <div class="sparkline-header">
-            <span>Latency Timeline</span>
-            <div class="legend">
-              <span class="legend-item"><span class="legend-dot yolo"></span>GPU Inference</span>
-              <span class="legend-item"><span class="legend-dot total"></span>Total RTT</span>
+        <div class="collapsible-body" id="graphsBody">
+          <div class="sparkline-container">
+            <div class="sparkline-header">
+              <span>Latency Timeline</span>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot yolo"></span>GPU Inference</span>
+                <span class="legend-item"><span class="legend-dot total"></span>Total RTT</span>
+              </div>
             </div>
+            <canvas id="sparklineCanvas" width="450" height="90"></canvas>
           </div>
-          <canvas id="sparklineCanvas" width="450" height="90"></canvas>
+          <div class="sparkline-container">
+            <div class="sparkline-header">
+              <span>Detector Throughput</span>
+              <div class="legend">
+                <span class="legend-item"><span class="legend-dot fps"></span>FPS</span>
+              </div>
+            </div>
+            <canvas id="fpsSparkline" width="450" height="70"></canvas>
+          </div>
+        </div>
+
         <div class="switch-row compact">
           <div class="switch-info">
             <span class="switch-name font-sm">Use GPU Acceleration</span>
@@ -261,6 +275,33 @@
         </div>
         <div class="ledger-body">
           <ul id="chatLog" class="chat-log"></ul>
+        </div>
+      </div>
+
+      <div class="panel-card session-card collapsed" id="sessionCard">
+        <div class="card-header collapsible-header" role="button" tabindex="0" aria-expanded="false" aria-controls="sessionBody">
+          <h2 class="card-title">Session Stats</h2>
+          <span class="collapse-chevron" aria-hidden="true">▾</span>
+        </div>
+        <div class="collapsible-body" id="sessionBody">
+          <div class="hardware-grid">
+            <div class="hw-item">
+              <span class="hw-label">Questions Asked</span>
+              <span id="statQuestions" class="hw-value">0</span>
+            </div>
+            <div class="hw-item">
+              <span class="hw-label">Avg Response</span>
+              <span id="statAvgResp" class="hw-value">— ms</span>
+            </div>
+            <div class="hw-item">
+              <span class="hw-label">Frames Processed</span>
+              <span id="statFrames" class="hw-value">0</span>
+            </div>
+            <div class="hw-item">
+              <span class="hw-label">Session Uptime</span>
+              <span id="statUptime" class="hw-value">0:00</span>
+            </div>
+          </div>
         </div>
       </div>
     </section>

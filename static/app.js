@@ -19,6 +19,7 @@ const interimTranscriptEl = document.getElementById("interimTranscript");
 const transcriptLog = document.getElementById("transcriptLog");
 const videoWrap = document.getElementById("videoWrap");
 const sparklineCanvas = document.getElementById("sparklineCanvas");
+const fpsSparkline = document.getElementById("fpsSparkline");
 
 // New DOM Elements for presets, narrator, voice setting and telemetry
 const narrateToggle = document.getElementById("narrateToggle");
@@ -64,7 +65,15 @@ let ttsPitch = 1.0;
 // Sparkline telemetry arrays
 const inferenceHistory = [];
 const rttHistory = [];
+const fpsHistory = [];
 const MAX_HISTORY_LEN = 40;
+
+// Session stats counters
+const sessionStart = Date.now();
+let questionsAsked = 0;
+let framesProcessed = 0;
+let totalResponseMs = 0;
+let responseCount = 0;
 
 // Local MediaPipe state
 let mpHands = null;
@@ -164,9 +173,13 @@ function connectWS() {
     // Add values to history
     inferenceHistory.push(msg.inference_ms);
     rttHistory.push(clientRtt);
+    fpsHistory.push(msg.fps);
     if (inferenceHistory.length > MAX_HISTORY_LEN) inferenceHistory.shift();
     if (rttHistory.length > MAX_HISTORY_LEN) rttHistory.shift();
+    if (fpsHistory.length > MAX_HISTORY_LEN) fpsHistory.shift();
+    framesProcessed++;
     drawSparkline();
+    drawFpsSparkline();
 
     if (!busy) {
       updateGlow(yoloToggle.checked ? "yolo" : "idle");
@@ -420,6 +433,46 @@ function drawSparkline() {
   drawLine(inferenceHistory, "#10b981", yoloGrad);
 }
 
+function drawFpsSparkline() {
+  if (!fpsSparkline) return;
+  const ctx = fpsSparkline.getContext("2d");
+  const w = fpsSparkline.width;
+  const h = fpsSparkline.height;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
+  ctx.lineWidth = 1;
+  for (let y = 10; y < h; y += 20) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+
+  if (fpsHistory.length < 2) return;
+  const maxVal = Math.max(...fpsHistory, 30) * 1.15;
+  const step = w / (MAX_HISTORY_LEN - 1);
+
+  ctx.beginPath();
+  for (let i = 0; i < fpsHistory.length; i++) {
+    const x = i * step;
+    const y = h - (fpsHistory[i] / maxVal) * (h - 10) - 5;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = "#f59e0b";
+  ctx.lineWidth = 2.0;
+  ctx.stroke();
+
+  const grad = ctx.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, "rgba(245, 158, 11, 0.14)");
+  grad.addColorStop(1, "rgba(245, 158, 11, 0)");
+  ctx.lineTo((fpsHistory.length - 1) * step, h);
+  ctx.lineTo(0, h);
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
 function addChatEntry(role, text, imageSrc = null) {
   const li = document.createElement("li");
   li.className = role === "user" ? "msg-user" : "msg-assistant";
@@ -498,6 +551,8 @@ async function askAboutScene(question) {
   } catch (_) {}
 
   addChatEntry("user", question, snapshotUrl);
+  questionsAsked++;
+  const askStart = Date.now();
   setVoiceStatus("🧠 Thinking…", "thinking");
   updateGlow("thinking");
   try {
@@ -508,6 +563,8 @@ async function askAboutScene(question) {
     });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
     const { caption } = await res.json();
+    totalResponseMs += Date.now() - askStart;
+    responseCount++;
     addChatEntry("assistant", caption);
     setVoiceStatus("🔊 Speaking…", "speaking");
     updateGlow("speaking");
@@ -727,21 +784,44 @@ function setupSpeechControls() {
   }
 }
 
-function setupCollapsibleControls() {
-  const card = document.getElementById("controlsCard");
-  const header = document.getElementById("controlsToggle");
-  if (!card || !header) return;
-  const toggle = () => {
-    const collapsed = card.classList.toggle("collapsed");
-    header.setAttribute("aria-expanded", String(!collapsed));
-  };
-  header.addEventListener("click", toggle);
-  header.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggle();
-    }
+// Generic collapsible cards: any `.collapsible-header` inside a `.panel-card`
+// toggles the card's `collapsed` class. Initial state comes from the markup.
+function setupCollapsibles() {
+  document.querySelectorAll(".collapsible-header").forEach((header) => {
+    const card = header.closest(".panel-card");
+    if (!card) return;
+    const sync = () =>
+      header.setAttribute("aria-expanded", String(!card.classList.contains("collapsed")));
+    const toggle = () => { card.classList.toggle("collapsed"); sync(); };
+    sync();
+    header.addEventListener("click", toggle);
+    header.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
   });
+}
+
+// ---- Session stats ----
+function updateSessionStats() {
+  const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+  const mm = Math.floor(elapsed / 60);
+  const ss = String(elapsed % 60).padStart(2, "0");
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+  set("statQuestions", String(questionsAsked));
+  set("statAvgResp", responseCount ? `${Math.round(totalResponseMs / responseCount)} ms` : "— ms");
+  set("statFrames", framesProcessed.toLocaleString());
+  set("statUptime", `${mm}:${ss}`);
+}
+
+function startSessionStatsLoop() {
+  updateSessionStats();
+  setInterval(updateSessionStats, 1000);
 }
 
 function setupWakeWord() {
@@ -923,6 +1003,9 @@ async function processLocalVision() {
 }
 
 (async function init() {
+  setupCollapsibles();
+  startSessionStatsLoop();
+
   try {
     await startCamera();
   } catch (err) {
@@ -932,13 +1015,12 @@ async function processLocalVision() {
   connectWS();
   sendLoop();
   setupVoice();
-  
+
   startStatsLoop();
   setupPresetsAndNarrator();
   setupSpeechControls();
   setupWakeWord();
-  setupCollapsibleControls();
-  
+
   // Set up and start MediaPipe local perception tasks
   setupMediaPipe();
   processLocalVision();

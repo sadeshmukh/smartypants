@@ -350,13 +350,23 @@ input:checked + .slider:before {
   transition: transform 0.2s ease;
 }
 
-.controls-card.collapsed .controls-grid {
+.panel-card.collapsed .controls-grid,
+.panel-card.collapsed .collapsible-body {
   display: none;
 }
 
-.controls-card.collapsed .collapse-chevron {
+.panel-card.collapsed .collapse-chevron {
   transform: rotate(-90deg);
 }
+
+.collapsible-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.legend-dot.fps { background: var(--amber); }
+#fpsSparkline { width: 100%; height: 60px; display: block; }
 
 .switch-row {
   display: flex;
