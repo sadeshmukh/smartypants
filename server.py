@@ -185,9 +185,17 @@ async def synthesize_elevenlabs_tts(text: str) -> bytes:
     if not api_key:
         raise ValueError("ELEVENLABS_API_KEY is not set in the environment or .env file.")
 
-    # Sarah: a natural female voice usable on the free plan (legacy "library"
-    # voices like Rachel are blocked for free API keys). Override via env.
-    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+    # Jessica: expressive, conversational voice — the most human-sounding of
+    # the default voices usable on the free plan. (Premium "library" voices
+    # and some defaults like Aria/Charlotte are blocked for free API keys.)
+    # Other free-plan natural options: Sarah EXAVITQu4vr4xnSDxMaL,
+    # Matilda XrExE9yKIg1WjnnlVkGX, Brian nPczCjzI2devNBz1zQrb (male),
+    # Lily pFZP5JQG7iQjIQuC4Bku. Override via env.
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
+    # multilingual_v2 is ElevenLabs' most natural/human-sounding model (it
+    # costs ~2x the credits of flash_v2_5 — set ELEVENLABS_MODEL_ID=
+    # eleven_flash_v2_5 to trade quality for cheaper/faster synthesis).
+    model_id = os.environ.get("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
     headers = {
         "xi-api-key": api_key,
@@ -196,9 +204,12 @@ async def synthesize_elevenlabs_tts(text: str) -> bytes:
     }
     payload = {
         "text": text,
-        # Flash v2.5: lowest latency and ~half the credit cost of the standard
-        # models, while still sounding natural.
-        "model_id": "eleven_flash_v2_5",
+        "model_id": model_id,
+        "voice_settings": {
+            "stability": 0.5,
+            "similarity_boost": 0.75,
+            "use_speaker_boost": True,
+        },
     }
 
     async with httpx.AsyncClient(timeout=20) as client:
