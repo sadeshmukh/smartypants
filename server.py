@@ -179,8 +179,46 @@ async def synthesize_nvidia_tts(text: str) -> bytes:
         return response.content
 
 
+async def synthesize_elevenlabs_tts(text: str) -> bytes:
+    import httpx
+    api_key = os.environ.get("ELEVENLABS_API_KEY")
+    if not api_key:
+        raise ValueError("ELEVENLABS_API_KEY is not set in the environment or .env file.")
+
+    # Sarah: a natural female voice usable on the free plan (legacy "library"
+    # voices like Rachel are blocked for free API keys). Override via env.
+    voice_id = os.environ.get("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }
+    payload = {
+        "text": text,
+        # Flash v2.5: lowest latency and ~half the credit cost of the standard
+        # models, while still sounding natural.
+        "model_id": "eleven_flash_v2_5",
+    }
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.content
+
+
 @app.get("/api/tts")
-async def api_tts(text: str, client_id: str | None = None):
+async def api_tts(text: str, client_id: str | None = None, engine: str | None = None):
+    # ElevenLabs is an explicit opt-in from the voice selector; route to it
+    # regardless of the cloud/jetson toggle.
+    if engine == "elevenlabs":
+        try:
+            audio_bytes = await synthesize_elevenlabs_tts(text)
+            return Response(content=audio_bytes, media_type="audio/mpeg")
+        except Exception as e:
+            print(f"[TTS] Error calling ElevenLabs TTS: {e}")
+            return Response(status_code=204)
+
     if not should_use_cloud(client_id):
         # HTTP 204 tells client to fall back to browser Web Speech API
         return Response(status_code=204)

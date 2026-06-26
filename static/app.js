@@ -516,20 +516,24 @@ async function askAboutScene(question) {
 function speak(text) {
   return new Promise((resolve) => {
     const clientIdParam = myClientId ? `&client_id=${myClientId}` : '';
-    
-    fetch(`/api/tts?text=${encodeURIComponent(text)}${clientIdParam}`)
-      .then(response => {
-        if (response.status === 204) {
+    const engineParam =
+      voiceSelect && voiceSelect.value === 'elevenlabs' ? '&engine=elevenlabs' : '';
+    const ttsUrl = `/api/tts?text=${encodeURIComponent(text)}${clientIdParam}${engineParam}`;
+
+    // Fetch the audio exactly once and play it from a blob. (The previous code
+    // issued a second GET to /api/tts for playback, which would double-bill
+    // paid engines like ElevenLabs.)
+    fetch(ttsUrl)
+      .then(async (response) => {
+        if (response.status === 204 || !response.ok) {
           useBrowserTTS(text, resolve);
-        } else if (response.ok) {
-          const audioUrl = `/api/tts?text=${encodeURIComponent(text)}${clientIdParam}`;
-          const audio = new Audio(audioUrl);
-          audio.onended = resolve;
-          audio.onerror = () => useBrowserTTS(text, resolve);
-          audio.play().catch(() => useBrowserTTS(text, resolve));
-        } else {
-          useBrowserTTS(text, resolve);
+          return;
         }
+        const blobUrl = URL.createObjectURL(await response.blob());
+        const audio = new Audio(blobUrl);
+        audio.onended = () => { URL.revokeObjectURL(blobUrl); resolve(); };
+        audio.onerror = () => { URL.revokeObjectURL(blobUrl); useBrowserTTS(text, resolve); };
+        audio.play().catch(() => { URL.revokeObjectURL(blobUrl); useBrowserTTS(text, resolve); });
       })
       .catch(() => {
         useBrowserTTS(text, resolve);
@@ -675,7 +679,9 @@ function populateVoiceList() {
   const voices = speechSynthesis.getVoices();
   if (voiceSelect) {
     const prevVal = voiceSelect.value;
-    voiceSelect.innerHTML = '<option value="">Default Voice</option>';
+    voiceSelect.innerHTML =
+      '<option value="">Default Voice</option>' +
+      '<option value="elevenlabs">ElevenLabs (Premium)</option>';
     voices.forEach((v) => {
       const option = document.createElement("option");
       option.textContent = `${v.name} (${v.lang})`;
