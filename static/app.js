@@ -29,6 +29,7 @@ const rateRange = document.getElementById("rateRange");
 const pitchRange = document.getElementById("pitchRange");
 const rateVal = document.getElementById("rateVal");
 const pitchVal = document.getElementById("pitchVal");
+const soundFxToggle = document.getElementById("soundFxToggle");
 
 const statCpu = document.getElementById("statCpu");
 const statGpu = document.getElementById("statGpu");
@@ -566,6 +567,7 @@ async function askAboutScene(question) {
     totalResponseMs += Date.now() - askStart;
     responseCount++;
     addChatEntry("assistant", caption);
+    playReadySound();
     setVoiceStatus("🔊 Speaking…", "speaking");
     updateGlow("speaking");
     await speak(caption);
@@ -670,6 +672,7 @@ function setupVoice() {
 
     // Check if the wake phrase is in the interim transcript
     if (interim.toLowerCase().includes(WAKE_PHRASE)) {
+      if (!isListeningAfterWake) playWakeSound();
       isListeningAfterWake = true;
       updateGlow("listening");
     }
@@ -765,21 +768,45 @@ function setupSpeechControls() {
   }
 
   if (voiceSelect) {
-    voiceSelect.addEventListener("change", () => {
+    // Restore saved output voice (option values are stable across reloads).
+    const savedVoice = localStorage.getItem("outputVoice");
+    if (savedVoice !== null) voiceSelect.value = savedVoice;
+    const applyVoice = () => {
       const voices = speechSynthesis.getVoices();
       selectedVoice = voices.find(v => v.voiceURI === voiceSelect.value) || null;
+    };
+    applyVoice();
+    voiceSelect.addEventListener("change", () => {
+      applyVoice();
+      localStorage.setItem("outputVoice", voiceSelect.value);
+      const label = voiceSelect.options[voiceSelect.selectedIndex].text;
+      showToast(`Output voice: ${label}`, "success");
     });
   }
   if (rateRange) {
+    const savedRate = localStorage.getItem("ttsRate");
+    if (savedRate !== null) {
+      rateRange.value = savedRate;
+      ttsRate = parseFloat(savedRate);
+      if (rateVal) rateVal.textContent = ttsRate.toFixed(1);
+    }
     rateRange.addEventListener("input", () => {
       ttsRate = parseFloat(rateRange.value);
       if (rateVal) rateVal.textContent = ttsRate.toFixed(1);
+      localStorage.setItem("ttsRate", rateRange.value);
     });
   }
   if (pitchRange) {
+    const savedPitch = localStorage.getItem("ttsPitch");
+    if (savedPitch !== null) {
+      pitchRange.value = savedPitch;
+      ttsPitch = parseFloat(savedPitch);
+      if (pitchVal) pitchVal.textContent = ttsPitch.toFixed(1);
+    }
     pitchRange.addEventListener("input", () => {
       ttsPitch = parseFloat(pitchRange.value);
       if (pitchVal) pitchVal.textContent = ttsPitch.toFixed(1);
+      localStorage.setItem("ttsPitch", pitchRange.value);
     });
   }
 }
@@ -832,6 +859,143 @@ function setupWakeWord() {
     WAKE_PHRASE = phrase || DEFAULT_WAKE_PHRASE;
     localStorage.setItem(WAKE_PHRASE_KEY, WAKE_PHRASE);
     wakePhraseInput.value = WAKE_PHRASE;
+    showToast(`Wake word set to "${WAKE_PHRASE}"`, "success");
+  });
+}
+
+// ---- Boot splash ----
+function runBootSequence() {
+  const splash = document.getElementById("bootSplash");
+  if (!splash) return;
+  const log = document.getElementById("bootLog");
+  const lines = [
+    "Initializing CoreVision runtime…",
+    "Mounting TensorRT engine…",
+    "Loading YOLOv8 detection weights…",
+    "Calibrating MediaPipe landmarks…",
+    "Linking neural speech assistant…",
+    "Establishing Jetson uplink…",
+    "Second Sight online.",
+  ];
+  let i = 0;
+  const tick = () => {
+    if (i < lines.length) {
+      if (log) {
+        const li = document.createElement("li");
+        li.textContent = "› " + lines[i];
+        log.appendChild(li);
+      }
+      i++;
+      setTimeout(tick, 230);
+    } else {
+      setTimeout(() => {
+        splash.classList.add("done");
+        setTimeout(() => splash.remove(), 600);
+      }, 350);
+    }
+  };
+  tick();
+}
+
+// ---- Toast notifications ----
+function showToast(message, type = "info") {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("show"));
+  setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ---- Sound effects (WebAudio — no asset files, no 404 risk) ----
+let audioCtx = null;
+let soundFxEnabled = localStorage.getItem("soundFx") !== "0"; // default on
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+function playBlip(freq, duration = 0.12, type = "sine") {
+  if (!soundFxEnabled) return;
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + duration);
+}
+
+function playWakeSound() { playBlip(880, 0.12); setTimeout(() => playBlip(1180, 0.12), 90); }
+function playReadySound() { playBlip(620, 0.1); setTimeout(() => playBlip(820, 0.14), 80); }
+
+function setupSoundFx() {
+  if (!soundFxToggle) return;
+  soundFxToggle.checked = soundFxEnabled;
+  soundFxToggle.addEventListener("change", () => {
+    soundFxEnabled = soundFxToggle.checked;
+    localStorage.setItem("soundFx", soundFxEnabled ? "1" : "0");
+    if (soundFxEnabled) playReadySound();
+  });
+}
+
+// ---- Theme switcher ----
+function applyTheme(theme) {
+  if (theme === "midnight") document.documentElement.removeAttribute("data-theme");
+  else document.documentElement.setAttribute("data-theme", theme);
+}
+
+function setupTheme() {
+  const sel = document.getElementById("themeSelect");
+  const saved = localStorage.getItem("theme") || "midnight";
+  applyTheme(saved);
+  if (sel) {
+    sel.value = saved;
+    sel.addEventListener("change", () => {
+      applyTheme(sel.value);
+      localStorage.setItem("theme", sel.value);
+      showToast(`Theme: ${sel.options[sel.selectedIndex].text}`, "info");
+    });
+  }
+}
+
+// ---- Settings persistence (toggles) ----
+const PERSIST_CHECKBOXES = [
+  "yoloToggle", "trtToggle", "gpuToggle", "handsToggle",
+  "poseToggle", "waveToggle", "narrateToggle", "debugToggle",
+];
+
+function setupPersistence() {
+  PERSIST_CHECKBOXES.forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const key = "set_" + id;
+    const saved = localStorage.getItem(key);
+    if (saved !== null) {
+      const val = saved === "1";
+      if (el.checked !== val) {
+        el.checked = val;
+        el.dispatchEvent(new Event("change")); // run any wired side effects
+      }
+    }
+    el.addEventListener("change", () => {
+      localStorage.setItem(key, el.checked ? "1" : "0");
+    });
   });
 }
 
@@ -883,6 +1047,8 @@ function detectWave(history) {
 function triggerWaveAction() {
   if (busy) return;
   console.log("Wave detected! Triggering assistant...");
+  playWakeSound();
+  showToast("👋 Wave detected", "info");
   busy = true;
   if (recognition) {
     try { recognition.stop(); } catch (_) {}
@@ -1003,7 +1169,10 @@ async function processLocalVision() {
 }
 
 (async function init() {
+  runBootSequence();
+  setupTheme();
   setupCollapsibles();
+  setupSoundFx();
   startSessionStatsLoop();
 
   try {
@@ -1024,6 +1193,8 @@ async function processLocalVision() {
   // Set up and start MediaPipe local perception tasks
   setupMediaPipe();
   processLocalVision();
+  // Restore persisted toggle states after their change-listeners exist.
+  setupPersistence();
   
   // Start the unified 2D canvas drawing scene loop
   drawScene();

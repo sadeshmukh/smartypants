@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css" />
+  <!-- Apply saved theme before paint to avoid a flash of the default theme -->
+  <script>(function(){var t=localStorage.getItem("theme");if(t&&t!=="midnight")document.documentElement.setAttribute("data-theme",t);})();</script>
 
   <!-- MediaPipe Client SDKs -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
@@ -15,6 +17,18 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 <body>
+  <div id="bootSplash" class="boot-splash">
+    <div class="boot-inner">
+      <div class="boot-logo">
+        <span class="boot-dot"></span>
+        <span class="boot-title">SECOND SIGHT</span>
+      </div>
+      <div class="boot-sub">Edge Perception Hub</div>
+      <ul id="bootLog" class="boot-log"></ul>
+      <div class="boot-bar"><div class="boot-bar-fill"></div></div>
+    </div>
+  </div>
+
   <header class="app-header">
     <div class="header-left">
       <div class="logo">
@@ -24,6 +38,13 @@
       <span class="badge badge-edge">Edge Perception Hub</span>
     </div>
     <div class="header-right">
+      <select id="themeSelect" class="theme-select" title="Color theme" aria-label="Color theme">
+        <option value="midnight">🌙 Midnight</option>
+        <option value="catppuccin">🐱 Catppuccin</option>
+        <option value="amber">🟠 Amber CRT</option>
+        <option value="matrix">🟢 Matrix</option>
+        <option value="light">☀️ Daylight</option>
+      </select>
       <div class="server-status">
         <span class="status-indicator online"></span>
         <span id="connStatus" class="status-text">Connecting to Jetson...</span>
@@ -266,6 +287,13 @@
               <input type="range" id="pitchRange" min="0.5" max="2.0" step="0.1" value="1.0" />
             </div>
           </div>
+          <div class="switch-row compact">
+            <span class="switch-name font-sm">UI Sound Effects</span>
+            <label class="switch">
+              <input type="checkbox" id="soundFxToggle" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -306,6 +334,8 @@
       </div>
     </section>
   </main>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   <div id="kickOverlay" class="kick-overlay hidden">
     <div class="kick-card">

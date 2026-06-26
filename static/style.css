@@ -881,3 +881,213 @@ input:checked + .slider:before {
 .btn-primary:hover {
   background: var(--accent-hover);
 }
+
+/* ============================================================
+   Eye-candy & utility additions
+   ============================================================ */
+
+/* Theme switcher (header) */
+.theme-select {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  margin-right: 12px;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+.theme-select:hover { border-color: var(--border-hover); }
+
+.collapsible-header { transition: opacity var(--transition); }
+.collapsible-header:hover { opacity: 0.85; }
+
+/* ---- Boot splash ---- */
+.boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(99, 102, 241, 0.12), transparent 55%),
+    var(--bg-dark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.55s ease;
+}
+.boot-splash.done { opacity: 0; pointer-events: none; }
+.boot-inner {
+  width: min(440px, 86vw);
+  text-align: center;
+}
+.boot-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+.boot-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 18px var(--accent);
+  animation: bootPulse 1.1s ease-in-out infinite;
+}
+.boot-title {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: var(--text-primary);
+}
+.boot-sub {
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 22px;
+}
+.boot-log {
+  list-style: none;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--emerald);
+  text-align: left;
+  min-height: 150px;
+  margin: 0 auto 16px;
+  width: fit-content;
+}
+.boot-log li {
+  opacity: 0;
+  animation: bootLine 0.25s ease forwards;
+  margin-bottom: 4px;
+}
+.boot-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-color);
+  overflow: hidden;
+}
+.boot-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--emerald));
+  animation: bootFill 2.4s ease forwards;
+}
+@keyframes bootPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.35); opacity: 0.6; }
+}
+@keyframes bootLine {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes bootFill { from { width: 0%; } to { width: 100%; } }
+
+/* ---- Toast notifications ---- */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.toast {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 11px 16px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
+  transform: translateX(120%);
+  opacity: 0;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+  max-width: 300px;
+}
+.toast.show { transform: translateX(0); opacity: 1; }
+.toast-success { border-left-color: var(--emerald); }
+.toast-warn { border-left-color: var(--amber); }
+.toast-info { border-left-color: var(--accent); }
+
+/* ============================================================
+   Color themes (override CSS variables)
+   ============================================================ */
+[data-theme="catppuccin"] {
+  --bg-dark: #11111b;
+  --bg-panel: #1e1e2e;
+  --bg-input: #181825;
+  --border-color: rgba(205, 214, 244, 0.08);
+  --border-hover: rgba(205, 214, 244, 0.18);
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #7f849c;
+  --accent: #cba6f7;
+  --accent-hover: #b4befe;
+  --accent-light: rgba(203, 166, 247, 0.12);
+  --emerald: #a6e3a1;
+  --amber: #f9e2af;
+  --rose: #f38ba8;
+}
+
+[data-theme="amber"] {
+  --bg-dark: #0d0a04;
+  --bg-panel: #1a1408;
+  --bg-input: #0d0a04;
+  --border-color: rgba(245, 176, 11, 0.14);
+  --border-hover: rgba(245, 176, 11, 0.28);
+  --text-primary: #ffcf6b;
+  --text-secondary: #d79a35;
+  --text-muted: #8a6a25;
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+  --accent-light: rgba(245, 158, 11, 0.12);
+  --emerald: #d4a017;
+  --amber: #fbbf24;
+  --rose: #ff7849;
+}
+
+[data-theme="matrix"] {
+  --bg-dark: #000500;
+  --bg-panel: #04140a;
+  --bg-input: #000500;
+  --border-color: rgba(0, 255, 120, 0.12);
+  --border-hover: rgba(0, 255, 120, 0.28);
+  --text-primary: #a9ffcf;
+  --text-secondary: #4fdf8f;
+  --text-muted: #2c8f5a;
+  --accent: #00e676;
+  --accent-hover: #69f0ae;
+  --accent-light: rgba(0, 230, 118, 0.12);
+  --emerald: #00e676;
+  --amber: #b9f6ca;
+  --rose: #ff5252;
+}
+
+[data-theme="light"] {
+  --bg-dark: #f4f4f5;
+  --bg-panel: #ffffff;
+  --bg-input: #ffffff;
+  --border-color: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.18);
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-light: rgba(99, 102, 241, 0.1);
+  --emerald: #059669;
+  --amber: #d97706;
+  --rose: #e11d48;
+}
