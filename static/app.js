@@ -231,9 +231,12 @@ function drawScene() {
       const displayLabel = `${labelText.toUpperCase()} ${(score * 100).toFixed(0)}%`;
 
       const hue = getLabelHue(labelText);
-      const strokeColor = `hsla(${hue}, 70%, 55%, 1)`;
-      const fillColor = `hsla(${hue}, 70%, 55%, 0.08)`;
-      const badgeColor = `hsla(${hue}, 70%, 50%, 1)`;
+      // Opacity tracks confidence: faint for low-score boxes, solid for high.
+      const conf = Math.max(0, Math.min(1, score));
+      const strokeA = 0.35 + 0.65 * conf;
+      const strokeColor = `hsla(${hue}, 70%, 55%, ${strokeA})`;
+      const fillColor = `hsla(${hue}, 70%, 55%, ${0.04 + 0.14 * conf})`;
+      const badgeColor = `hsla(${hue}, 70%, 50%, ${strokeA})`;
 
       ctx.fillStyle = fillColor;
       ctx.fillRect(px1, py1, pw, ph);
