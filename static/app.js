@@ -724,6 +724,23 @@ function setupSpeechControls() {
   }
 }
 
+function setupCollapsibleControls() {
+  const card = document.getElementById("controlsCard");
+  const header = document.getElementById("controlsToggle");
+  if (!card || !header) return;
+  const toggle = () => {
+    const collapsed = card.classList.toggle("collapsed");
+    header.setAttribute("aria-expanded", String(!collapsed));
+  };
+  header.addEventListener("click", toggle);
+  header.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggle();
+    }
+  });
+}
+
 function setupWakeWord() {
   if (!wakePhraseInput) return;
   wakePhraseInput.value = WAKE_PHRASE;
@@ -917,6 +934,7 @@ async function processLocalVision() {
   setupPresetsAndNarrator();
   setupSpeechControls();
   setupWakeWord();
+  setupCollapsibleControls();
   
   // Set up and start MediaPipe local perception tasks
   setupMediaPipe();

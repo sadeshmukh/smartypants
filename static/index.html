@@ -48,11 +48,12 @@
         <canvas id="capture" class="hidden"></canvas>
       </div>
 
-      <div class="panel-card controls-card">
-        <div class="card-header">
+      <div class="panel-card controls-card collapsed" id="controlsCard">
+        <div class="card-header collapsible-header" id="controlsToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="controlsGrid">
           <h2 class="card-title">Model Overlays & Gestures</h2>
+          <span class="collapse-chevron" aria-hidden="true">▾</span>
         </div>
-        <div class="controls-grid">
+        <div class="controls-grid" id="controlsGrid">
           <div class="switch-row">
             <div class="switch-info">
               <span class="switch-name">YOLOv8 Bounding Boxes</span>

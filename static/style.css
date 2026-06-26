@@ -339,6 +339,25 @@ input:checked + .slider:before {
   gap: 12px;
 }
 
+.collapsible-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.collapse-chevron {
+  color: var(--text-secondary);
+  font-size: 14px;
+  transition: transform 0.2s ease;
+}
+
+.controls-card.collapsed .controls-grid {
+  display: none;
+}
+
+.controls-card.collapsed .collapse-chevron {
+  transform: rotate(-90deg);
+}
+
 .switch-row {
   display: flex;
   align-items: center;
