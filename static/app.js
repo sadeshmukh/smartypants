@@ -23,6 +23,7 @@ const sparklineCanvas = document.getElementById("sparklineCanvas");
 // New DOM Elements for presets, narrator, voice setting and telemetry
 const narrateToggle = document.getElementById("narrateToggle");
 const voiceSelect = document.getElementById("voiceSelect");
+const wakePhraseInput = document.getElementById("wakePhraseInput");
 const rateRange = document.getElementById("rateRange");
 const pitchRange = document.getElementById("pitchRange");
 const rateVal = document.getElementById("rateVal");
@@ -40,7 +41,11 @@ const poseToggle = document.getElementById("poseToggle");
 const SEND_INTERVAL_MS = 120; // ~8 fps capture, deliberately below the WS round-trip budget
 const CAPTURE_W = 640;
 const CAPTURE_H = 480;
-const WAKE_PHRASE = "hey assistant"; // one-line tweak if it's hard to hear live
+const DEFAULT_WAKE_PHRASE = "hey assistant";
+const WAKE_PHRASE_KEY = "wakePhrase";
+// Customizable in the browser (Voice Configuration panel); persisted in
+// localStorage. Always kept lowercase so transcript matching stays simple.
+let WAKE_PHRASE = (localStorage.getItem(WAKE_PHRASE_KEY) || DEFAULT_WAKE_PHRASE).toLowerCase();
 
 capture.width = CAPTURE_W;
 capture.height = CAPTURE_H;
@@ -719,6 +724,17 @@ function setupSpeechControls() {
   }
 }
 
+function setupWakeWord() {
+  if (!wakePhraseInput) return;
+  wakePhraseInput.value = WAKE_PHRASE;
+  wakePhraseInput.addEventListener("change", () => {
+    const phrase = wakePhraseInput.value.trim().toLowerCase();
+    WAKE_PHRASE = phrase || DEFAULT_WAKE_PHRASE;
+    localStorage.setItem(WAKE_PHRASE_KEY, WAKE_PHRASE);
+    wakePhraseInput.value = WAKE_PHRASE;
+  });
+}
+
 // ---- Wave Gesture Detection Logic ----
 function detectWave(history) {
   if (history.length < 15) return false;
@@ -900,6 +916,7 @@ async function processLocalVision() {
   startStatsLoop();
   setupPresetsAndNarrator();
   setupSpeechControls();
+  setupWakeWord();
   
   // Set up and start MediaPipe local perception tasks
   setupMediaPipe();
